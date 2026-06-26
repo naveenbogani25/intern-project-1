@@ -18,21 +18,20 @@ export default function TeacherPortal({ user, showToast }) {
 
   return (
     <div className="teacher-portal-layout">
-      {/* Sub navigation specifically for Teacher */}
-      <nav className="header-nav mb-2" style={{ display: "flex", justifyContent: "flex-start", gap: "10px" }}>
+      <nav className="sub-nav">
         <button
-          className={`nav-btn ${currentView === "dashboard" || currentView === "detail" ? "active" : ""}`}
+          className={`sub-nav-btn ${currentView === "dashboard" || currentView === "detail" ? "active" : ""}`}
           onClick={goToDashboard}
         >
           📋 Classroom Dashboard
         </button>
         <button
-          className={`nav-btn ${currentView === "attendance" ? "active" : ""}`}
+          className={`sub-nav-btn ${currentView === "attendance" ? "active" : ""}`}
           onClick={goToAttendance}
         >
           📅 Daily Attendance
         </button>
-        <button className={`nav-btn ${currentView === "meals" ? "active" : ""}`} onClick={goToMeals}>
+        <button className={`sub-nav-btn ${currentView === "meals" ? "active" : ""}`} onClick={goToMeals}>
           🍽️ Meals & Safety
         </button>
       </nav>

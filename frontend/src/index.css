@@ -2002,8 +2002,8 @@ body::before {
   border-radius: var(--radius-sm);
   font-family: var(--font-family);
   font-size: 0.85rem;
-  font-weight: 500;
-  color: var(--color-text-muted);
+  font-weight: 600;
+  color: var(--color-text-secondary);
   cursor: pointer;
   transition: var(--transition);
   white-space: nowrap;
@@ -2692,6 +2692,62 @@ body::before {
     font-size: 0.78rem;
   }
 }
+
+/* Sub-navigation inside portals (light bg content area) */
+.sub-nav {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 24px;
+  background: var(--color-white);
+  padding: 6px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--color-border-light);
+  overflow-x: auto;
+  width: fit-content;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sub-nav-btn {
+  padding: 10px 20px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-family);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sub-nav-btn:hover {
+  color: var(--color-primary);
+  background: var(--color-primary-bg);
+}
+
+.sub-nav-btn.active {
+  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+  color: var(--color-white);
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);
+}
+
+@media (max-width: 600px) {
+  .sub-nav {
+    width: 100%;
+  }
+  .sub-nav-btn {
+    padding: 8px 14px;
+    font-size: 0.8rem;
+  }
+}
+
 
 
 

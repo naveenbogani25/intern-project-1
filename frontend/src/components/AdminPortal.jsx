@@ -27,24 +27,23 @@ export default function AdminPortal({ user, showToast }) {
 
   return (
     <div className="admin-portal-layout">
-      {/* Sub navigation specifically for Admin */}
-      <nav className="header-nav mb-2" style={{ display: "flex", justifyContent: "flex-start", gap: "8px", flexWrap: "wrap" }}>
-        <button className={`nav-btn ${currentView === "dashboard" || currentView === "detail" ? "active" : ""}`} onClick={goToDashboard}>
+      <nav className="sub-nav">
+        <button className={`sub-nav-btn ${currentView === "dashboard" || currentView === "detail" ? "active" : ""}`} onClick={goToDashboard}>
           📋 Dashboard
         </button>
-        <button className={`nav-btn ${currentView === "form" ? "active" : ""}`} onClick={goToForm}>
+        <button className={`sub-nav-btn ${currentView === "form" ? "active" : ""}`} onClick={goToForm}>
           ➕ Add Child
         </button>
-        <button className={`nav-btn ${currentView === "attendance" ? "active" : ""}`} onClick={goToAttendance}>
+        <button className={`sub-nav-btn ${currentView === "attendance" ? "active" : ""}`} onClick={goToAttendance}>
           📅 Attendance
         </button>
-        <button className={`nav-btn ${currentView === "meals" ? "active" : ""}`} onClick={goToMeals}>
+        <button className={`sub-nav-btn ${currentView === "meals" ? "active" : ""}`} onClick={goToMeals}>
           🍽️ Meals
         </button>
-        <button className={`nav-btn ${currentView === "fees" ? "active" : ""}`} onClick={goToFees}>
+        <button className={`sub-nav-btn ${currentView === "fees" ? "active" : ""}`} onClick={goToFees}>
           💰 Fees
         </button>
-        <button className={`nav-btn ${currentView === "usermgmt" ? "active" : ""}`} onClick={goToUserMgmt}>
+        <button className={`sub-nav-btn ${currentView === "usermgmt" ? "active" : ""}`} onClick={goToUserMgmt}>
           👥 Users
         </button>
       </nav>
