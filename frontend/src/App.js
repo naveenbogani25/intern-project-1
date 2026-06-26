@@ -15,6 +15,21 @@ function App() {
   const [toast, setToast] = useState(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
 
+  // Theme state: 'light' or 'dark'
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem("theme") || "light";
+  });
+
+  // Apply theme class to <html> element
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === "light" ? "dark" : "light"));
+  };
+
   const showToast = useCallback((message, type = "success") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
@@ -51,7 +66,7 @@ function App() {
             {toast.message}
           </div>
         )}
-        <LoginView onLogin={handleLogin} showToast={showToast} />
+        <LoginView onLogin={handleLogin} showToast={showToast} theme={theme} toggleTheme={toggleTheme} />
       </div>
     );
   }
@@ -82,6 +97,18 @@ function App() {
           </div>
           
           <div className="header-user-menu">
+            {/* Theme Toggle Button */}
+            <button
+              className="theme-toggle-btn"
+              onClick={toggleTheme}
+              title={theme === "light" ? "Switch to Dark Mode" : "Switch to Light Mode"}
+              aria-label="Toggle theme"
+            >
+              <span className={`theme-icon ${theme === "light" ? "sun-active" : "moon-active"}`}>
+                {theme === "light" ? "☀️" : "🌙"}
+              </span>
+            </button>
+
             <div className="user-badge" onClick={handleOpenProfile} style={{ cursor: "pointer" }}>
               👤 <span className="user-username" style={{ textDecoration: "underline" }}>{user.username}</span>
               <span className="badge badge-allergy" style={{ textTransform: "capitalize", marginLeft: "6px" }}>{user.role}</span>
@@ -125,7 +152,7 @@ function App() {
 // =============================================================
 // LOGIN VIEW COMPONENT
 // =============================================================
-function LoginView({ onLogin, showToast }) {
+function LoginView({ onLogin, showToast, theme, toggleTheme }) {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -161,6 +188,16 @@ function LoginView({ onLogin, showToast }) {
   return (
     <div className="login-screen">
       <div className="login-card">
+        <button
+          className="theme-toggle-btn login-theme-toggle"
+          onClick={toggleTheme}
+          title={theme === "light" ? "Switch to Dark Mode" : "Switch to Light Mode"}
+          aria-label="Toggle theme"
+        >
+          <span className={`theme-icon ${theme === "light" ? "sun-active" : "moon-active"}`}>
+            {theme === "light" ? "☀️" : "🌙"}
+          </span>
+        </button>
         <div className="login-brand">
           <span className="login-logo">🧒</span>
           <h2>FirstCry Intellitots</h2>
@@ -196,3 +233,4 @@ function LoginView({ onLogin, showToast }) {
 }
 
 export default App;
+

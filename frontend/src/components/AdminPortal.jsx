@@ -46,10 +46,7 @@ export default function AdminPortal({ user, showToast }) {
     sessionStorage.setItem("adminPortalView", "meals");
     setCurrentView("meals");
   };
-  const goToFees = () => {
-    sessionStorage.setItem("adminPortalView", "fees");
-    setCurrentView("fees");
-  };
+
   const goToUserMgmt = () => {
     sessionStorage.setItem("adminPortalView", "usermgmt");
     setCurrentView("usermgmt");
@@ -70,9 +67,7 @@ export default function AdminPortal({ user, showToast }) {
         <button className={`sub-nav-btn ${currentView === "meals" ? "active" : ""}`} onClick={goToMeals}>
           🍽️ Meals
         </button>
-        <button className={`sub-nav-btn ${currentView === "fees" ? "active" : ""}`} onClick={goToFees}>
-          💰 Fees
-        </button>
+
         <button className={`sub-nav-btn ${currentView === "usermgmt" ? "active" : ""}`} onClick={goToUserMgmt}>
           👥 Users
         </button>
@@ -97,9 +92,7 @@ export default function AdminPortal({ user, showToast }) {
         {currentView === "meals" && (
           <MealsView showToast={showToast} />
         )}
-        {currentView === "fees" && (
-          <FeesView showToast={showToast} />
-        )}
+
         {currentView === "usermgmt" && (
           <UserManagementView showToast={showToast} />
         )}
@@ -1791,189 +1784,6 @@ function MealsView({ showToast }) {
           </div>
         </div>
       </div>
-    </section>
-  );
-}
-
-// =============================================================
-// ADMIN FEES VIEW
-// =============================================================
-function FeesView({ showToast }) {
-  const [fees, setFees] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState("");
-
-  const fetchFees = useCallback(async () => {
-    setLoading(true);
-    try {
-      let url = `${API_BASE}/fees?`;
-      if (statusFilter) url += `status=${statusFilter}`;
-      const response = await fetch(url);
-      if (response.ok) setFees(await response.json());
-    } catch (err) {
-      showToast("Failed to load fees.", "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [statusFilter, showToast]);
-
-  useEffect(() => {
-    fetchFees();
-  }, [fetchFees]);
-
-  const markAsPaid = async (feeId, method) => {
-    try {
-      await fetch(`${API_BASE}/fees/${feeId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: "Paid",
-          paid_date: new Date().toISOString().split("T")[0],
-          payment_method: method,
-        }),
-      });
-      setFees(
-        fees.map((f) =>
-          f.id === feeId
-            ? {
-                ...f,
-                status: "Paid",
-                paid_date: new Date().toISOString().split("T")[0],
-                payment_method: method,
-              }
-            : f
-        )
-      );
-      showToast("Fee marked as paid!", "success");
-    } catch (err) {
-      showToast("Failed to update fee.", "error");
-    }
-  };
-
-  const totalDue = fees.filter((f) => f.status !== "Paid").reduce((sum, f) => sum + (f.amount || 0), 0);
-  const totalPaid = fees.filter((f) => f.status === "Paid").reduce((sum, f) => sum + (f.amount || 0), 0);
-  const overdueCount = fees.filter((f) => f.status === "Overdue").length;
-
-  return (
-    <section className="dashboard-section" style={{ padding: 0 }}>
-      <div className="dashboard-header">
-        <h1 className="dashboard-title">
-          <span>💰</span> Fee Management
-        </h1>
-      </div>
-
-      <div className="stats-row">
-        <div className="stat-card">
-          <div className="stat-icon green">💚</div>
-          <div className="stat-info">
-            <h3>₹{totalPaid.toLocaleString()}</h3>
-            <p>Total Collected</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon amber">💛</div>
-          <div className="stat-info">
-            <h3>₹{totalDue.toLocaleString()}</h3>
-            <p>Total Outstanding</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon red">❗</div>
-          <div className="stat-info">
-            <h3>{overdueCount}</h3>
-            <p>Overdue</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon blue">📄</div>
-          <div className="stat-info">
-            <h3>{fees.length}</h3>
-            <p>Total Records</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="filter-bar">
-        <select
-          className="filter-select"
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-        >
-          <option value="">All Statuses</option>
-          <option value="Pending">Pending</option>
-          <option value="Paid">Paid</option>
-          <option value="Overdue">Overdue</option>
-        </select>
-      </div>
-
-      {loading ? (
-        <div className="loading-container">
-          <div className="spinner"></div>
-          <p className="loading-text">Loading fees...</p>
-        </div>
-      ) : (
-        <div className="fees-grid">
-          {fees.map((fee) => (
-            <div key={fee.id} className={`fee-card fee-status-${fee.status.toLowerCase()}`}>
-              <div className="fee-header">
-                <div>
-                  <h4 className="fee-child-name">{fee.child_name}</h4>
-                  <span className="badge badge-allergy">{fee.fee_type}</span>
-                </div>
-                <div className="fee-amount">₹{(fee.amount || 0).toLocaleString()}</div>
-              </div>
-              <div className="fee-details">
-                <div>
-                  <span className="label">Due Date:</span> <span className="value">{fee.due_date}</span>
-                </div>
-                {fee.paid_date && (
-                  <div>
-                    <span className="label">Paid:</span> <span className="value">{fee.paid_date}</span>
-                  </div>
-                )}
-                {fee.payment_method && (
-                  <div>
-                    <span className="label">Method:</span> <span className="value">{fee.payment_method}</span>
-                  </div>
-                )}
-              </div>
-              <div className="fee-footer">
-                <span
-                  className={`badge ${
-                    fee.status === "Paid"
-                      ? "badge-normal"
-                      : fee.status === "Overdue"
-                      ? "badge-high-risk"
-                      : "badge-allergy"
-                  }`}
-                >
-                  {fee.status === "Paid" ? "✅" : fee.status === "Overdue" ? "🔴" : "🟡"} {fee.status}
-                </span>
-                {fee.status !== "Paid" && (
-                  <div className="fee-pay-actions">
-                    <button className="att-btn att-present" onClick={() => markAsPaid(fee.id, "UPI")}>
-                      UPI
-                    </button>
-                    <button className="att-btn att-present" onClick={() => markAsPaid(fee.id, "Cash")}>
-                      Cash
-                    </button>
-                    <button className="att-btn att-present" onClick={() => markAsPaid(fee.id, "Card")}>
-                      Card
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-          {fees.length === 0 && (
-            <div className="empty-state" style={{ gridColumn: "1 / -1" }}>
-              <div className="empty-state-icon">💰</div>
-              <h3>No Fee Records</h3>
-              <p>No fee records match your filters.</p>
-            </div>
-          )}
-        </div>
-      )}
     </section>
   );
 }
