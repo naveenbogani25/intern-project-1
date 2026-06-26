@@ -1309,8 +1309,8 @@ app.get('/api/attendance', async (req, res) => {
       
       if (teacherUsername) {
         const teacherClassRes = await pool.query(
-          "SELECT id FROM classrooms WHERE LOWER(teacher_name) LIKE $2",
-          [targetDate, `%${teacherUsername}%`]
+          "SELECT id FROM classrooms WHERE LOWER(teacher_name) LIKE $1",
+          [`%${teacherUsername}%`]
         );
         const assignedClassroomIds = teacherClassRes.rows.map(r => r.id);
         if (assignedClassroomIds.length === 0) {

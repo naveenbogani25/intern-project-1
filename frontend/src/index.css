@@ -2589,4 +2589,109 @@ body::before {
   width: 100% !important;
 }
 
+/* Responsive Table scroll */
+.children-table-wrapper {
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Real-time Dynamic Feedback and Animations */
+.attendance-card {
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  border: 1.5px solid var(--color-border-light);
+}
+
+.attendance-card.status-att-present {
+  background: linear-gradient(135deg, var(--color-white) 0%, rgba(20, 184, 166, 0.03) 100%);
+  border-color: rgba(20, 184, 166, 0.2);
+}
+
+.attendance-card.status-att-absent {
+  background: linear-gradient(135deg, var(--color-white) 0%, rgba(239, 68, 68, 0.03) 100%);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.attendance-card.status-att-late {
+  background: linear-gradient(135deg, var(--color-white) 0%, rgba(245, 158, 11, 0.03) 100%);
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+/* Micro-animations for buttons */
+.att-btn {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.att-btn:active {
+  transform: scale(0.95);
+}
+
+.att-btn::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100px;
+  height: 100px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  opacity: 0;
+  transition: transform 0.4s ease, opacity 0.4s ease;
+}
+
+.att-btn:active::before {
+  transform: translate(-50%, -50%) scale(1.5);
+  opacity: 1;
+}
+
+/* Smooth fade-in for dynamic search and filter lists */
+.children-table tbody tr,
+.attendance-card,
+.fee-card,
+.meal-safety-item {
+  animation: cardFadeIn 0.35s ease-out both;
+}
+
+@keyframes cardFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Responsive adjustments for narrow mobile layouts */
+@media (max-width: 480px) {
+  .attendance-actions {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    gap: 6px;
+  }
+  .att-btn {
+    width: 100%;
+    text-align: center;
+    padding: 10px;
+  }
+  .stats-row {
+    gap: 12px;
+  }
+  .stat-card {
+    padding: 16px;
+  }
+  .detail-tabs {
+    padding: 2px;
+  }
+  .detail-tab {
+    padding: 8px 12px;
+    font-size: 0.78rem;
+  }
+}
+
+
 
