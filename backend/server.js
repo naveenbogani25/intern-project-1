@@ -1324,46 +1324,6 @@ app.post('/api/check-custom-meal', async (req, res) => {
 // =============================================================
 
 const buildPath = path.join(__dirname, '../frontend/build');
-
-// Debug paths endpoint to see what exists on the server
-app.get('/api/debug-paths', (req, res) => {
-  const fs = require('fs');
-  const path = require('path');
-  
-  const debugInfo = {
-    __dirname,
-    cwd: process.cwd(),
-    buildPath,
-    buildPathExists: fs.existsSync(buildPath),
-    frontendExists: fs.existsSync(path.join(__dirname, '../frontend')),
-  };
-
-  if (debugInfo.frontendExists) {
-    try {
-      debugInfo.frontendContents = fs.readdirSync(path.join(__dirname, '../frontend'));
-    } catch (e) {
-      debugInfo.frontendError = e.message;
-    }
-  }
-
-  if (debugInfo.buildPathExists) {
-    try {
-      debugInfo.buildContents = fs.readdirSync(buildPath);
-    } catch (e) {
-      debugInfo.buildError = e.message;
-    }
-  } else {
-    // Let's check parent folder contents to see what's in the project root
-    try {
-      debugInfo.rootContents = fs.readdirSync(path.join(__dirname, '..'));
-    } catch (e) {
-      debugInfo.rootError = e.message;
-    }
-  }
-
-  res.json(debugInfo);
-});
-
 app.use(express.static(buildPath));
 
 app.get('*', (req, res, next) => {
