@@ -32,14 +32,72 @@ const AVATAR_COLORS = ["avatar-blue", "avatar-amber", "avatar-green", "avatar-pu
 // =============================================================
 
 function App() {
+  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem("user") || "null"));
   const [currentView, setCurrentView] = useState("dashboard");
   const [selectedChildId, setSelectedChildId] = useState(null);
   const [editChildData, setEditChildData] = useState(null);
   const [toast, setToast] = useState(null);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profileUsername, setProfileUsername] = useState("");
+  const [profilePassword, setProfilePassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [profileError, setProfileError] = useState("");
 
   const showToast = (message, type = "success") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
+  };
+
+  const handleLogin = (loggedInUser) => {
+    setUser(loggedInUser);
+    localStorage.setItem("user", JSON.stringify(loggedInUser));
+    if (loggedInUser.role === "parent") {
+      setCurrentView("parent");
+    } else {
+      setCurrentView("dashboard");
+    }
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem("user");
+    setCurrentView("dashboard");
+  };
+
+  const handleOpenProfile = () => {
+    setProfileUsername(user.username);
+    setProfilePassword("");
+    setProfileError("");
+    setShowPassword(false);
+    setShowProfileModal(true);
+  };
+
+  const handleSaveProfile = async (e) => {
+    e.preventDefault();
+    setProfileError("");
+    if (!profileUsername.trim() || !profilePassword.trim()) {
+      setProfileError("Username and password are required");
+      return;
+    }
+    try {
+      const response = await fetch(`${API_BASE}/users/profile`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id, username: profileUsername.trim(), password: profilePassword })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        const updatedUser = data.user;
+        setUser(updatedUser);
+        localStorage.setItem("user", JSON.stringify(updatedUser));
+        setShowProfileModal(false);
+        showToast("Profile details updated successfully!", "success");
+      } else {
+        setProfileError(data.error || "Update failed");
+      }
+    } catch (err) {
+      setProfileError("Could not connect to the server.");
+    }
   };
 
   const goToDashboard = () => { setCurrentView("dashboard"); setSelectedChildId(null); setEditChildData(null); };
@@ -49,6 +107,32 @@ function App() {
   const goToAttendance = () => { setCurrentView("attendance"); };
   const goToMeals = () => { setCurrentView("meals"); };
   const goToFees = () => { setCurrentView("fees"); };
+  const goToUserMgmt = () => { setCurrentView("usermgmt"); };
+
+  // Sync currentView based on role when user changes (e.g. after refresh)
+  useEffect(() => {
+    if (user) {
+      if (user.role === "parent") {
+        setCurrentView("parent");
+      } else if (currentView === "parent") {
+        setCurrentView("dashboard");
+      }
+    }
+  }, [user]);
+
+  // Render Login gateway if not authenticated
+  if (!user) {
+    return (
+      <div className="app">
+        {toast && (
+          <div className={`toast-alert ${toast.type}`}>
+            {toast.message}
+          </div>
+        )}
+        <LoginView onLogin={handleLogin} showToast={showToast} />
+      </div>
+    );
+  }
 
   return (
     <div className="app">
@@ -63,12 +147,36 @@ function App() {
             </div>
           </div>
           <nav className="header-nav">
-            <button id="nav-dashboard" className={`nav-btn ${currentView === "dashboard" ? "active" : ""}`} onClick={goToDashboard}>📋 Dashboard</button>
-            <button id="nav-add-child" className={`nav-btn ${currentView === "form" ? "active" : ""}`} onClick={goToForm}>➕ Add Child</button>
-            <button id="nav-attendance" className={`nav-btn ${currentView === "attendance" ? "active" : ""}`} onClick={goToAttendance}>📅 Attendance</button>
-            <button id="nav-meals" className={`nav-btn ${currentView === "meals" ? "active" : ""}`} onClick={goToMeals}>🍽️ Meals</button>
-            <button id="nav-fees" className={`nav-btn ${currentView === "fees" ? "active" : ""}`} onClick={goToFees}>💰 Fees</button>
+            {user.role !== "parent" && (
+              <>
+                <button id="nav-dashboard" className={`nav-btn ${currentView === "dashboard" ? "active" : ""}`} onClick={goToDashboard}>📋 Dashboard</button>
+                {user.role === "admin" && (
+                  <button id="nav-add-child" className={`nav-btn ${currentView === "form" ? "active" : ""}`} onClick={goToForm}>➕ Add Child</button>
+                )}
+                <button id="nav-attendance" className={`nav-btn ${currentView === "attendance" ? "active" : ""}`} onClick={goToAttendance}>📅 Attendance</button>
+                <button id="nav-meals" className={`nav-btn ${currentView === "meals" ? "active" : ""}`} onClick={goToMeals}>🍽️ Meals</button>
+                {user.role === "admin" && (
+                  <>
+                    <button id="nav-fees" className={`nav-btn ${currentView === "fees" ? "active" : ""}`} onClick={goToFees}>💰 Fees</button>
+                    <button id="nav-users" className={`nav-btn ${currentView === "usermgmt" ? "active" : ""}`} onClick={goToUserMgmt}>👥 Users</button>
+                  </>
+                )}
+              </>
+            )}
+            {user.role === "parent" && (
+              <span className="portal-label">🏡 Parent Portal</span>
+            )}
           </nav>
+          
+          <div className="header-user-menu">
+            <div className="user-badge" onClick={handleOpenProfile}>
+              👤 <span className="user-username">{user.username}</span>
+              <span className="badge badge-allergy" style={{ textTransform: "capitalize", marginLeft: "6px" }}>{user.role}</span>
+            </div>
+            <button className="btn btn-secondary logout-btn" onClick={handleLogout} style={{ marginLeft: "12px", padding: "6px 12px", fontSize: "0.85rem" }}>
+              🚪 Logout
+            </button>
+          </div>
         </div>
       </header>
 
@@ -83,13 +191,67 @@ function App() {
           </div>
         )}
 
-        {currentView === "dashboard" && <DashboardView onViewChild={goToDetail} showToast={showToast} />}
+        {/* User Profile Modal */}
+        {showProfileModal && (
+          <div className="modal-overlay" onClick={() => setShowProfileModal(false)}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: "400px" }}>
+              <h3>👤 User Profile</h3>
+              <p className="text-muted mb-2">View and update your login credentials.</p>
+              <form onSubmit={handleSaveProfile}>
+                {profileError && <div className="form-error mb-2"><span>❌</span> {profileError}</div>}
+                <div className="form-group mb-2">
+                  <label>Username</label>
+                  <input
+                    type="text"
+                    value={profileUsername}
+                    onChange={(e) => setProfileUsername(e.target.value)}
+                  />
+                </div>
+                <div className="form-group mb-2">
+                  <label>New Password</label>
+                  <div style={{ position: "relative" }}>
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={profilePassword}
+                      placeholder="Enter new password"
+                      onChange={(e) => setProfilePassword(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      style={{
+                        position: "absolute",
+                        right: "10px",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        fontSize: "0.9rem"
+                      }}
+                    >
+                      {showPassword ? "🙈" : "👁️"}
+                    </button>
+                  </div>
+                </div>
+                <div className="modal-actions" style={{ marginTop: "20px" }}>
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowProfileModal(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary">Save Changes</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {currentView === "parent" && <ParentView user={user} showToast={showToast} />}
+        {currentView === "dashboard" && <DashboardView user={user} onViewChild={goToDetail} showToast={showToast} />}
         {currentView === "form" && <FormView onSuccess={goToDashboard} showToast={showToast} />}
         {currentView === "detail" && <DetailView childId={selectedChildId} onBack={goToDashboard} onEdit={goToEdit} showToast={showToast} />}
         {currentView === "edit" && <EditView childData={editChildData} onSuccess={goToDashboard} onCancel={goToDashboard} showToast={showToast} />}
-        {currentView === "attendance" && <AttendanceView showToast={showToast} />}
+        {currentView === "attendance" && <AttendanceView user={user} showToast={showToast} />}
         {currentView === "meals" && <MealsView showToast={showToast} />}
         {currentView === "fees" && <FeesView showToast={showToast} />}
+        {currentView === "usermgmt" && <UserManagementView showToast={showToast} />}
       </main>
     </div>
   );
@@ -100,7 +262,7 @@ function App() {
 // DASHBOARD VIEW COMPONENT
 // =============================================================
 
-function DashboardView({ onViewChild, showToast }) {
+function DashboardView({ user, onViewChild, showToast }) {
   const [children, setChildren] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -117,16 +279,19 @@ function DashboardView({ onViewChild, showToast }) {
       if (classroomFilter) url += `classroom=${encodeURIComponent(classroomFilter)}&`;
       if (allergyFilter) url += `allergy_type=${encodeURIComponent(allergyFilter)}&`;
       if (searchQuery) url += `search=${encodeURIComponent(searchQuery)}&`;
+      if (user && user.role === 'teacher') {
+        url += `teacher_username=${encodeURIComponent(user.username)}&`;
+      }
       const response = await fetch(url);
       if (!response.ok) throw new Error(`Server error: ${response.status}`);
       const data = await response.json();
       setChildren(data);
     } catch (err) {
-      setError("Could not connect to the server. Make sure the Flask backend is running on port 5000.");
+      setError("Could not connect to the server. Make sure the backend is running.");
     } finally {
       setLoading(false);
     }
-  }, [classroomFilter, allergyFilter, searchQuery]);
+  }, [user, classroomFilter, allergyFilter, searchQuery]);
 
   useEffect(() => { fetchChildren(); }, [fetchChildren]);
 
@@ -267,6 +432,7 @@ function FormView({ onSuccess, showToast }) {
     if (!classroomId) { setFormError("Please select a classroom."); setSubmitting(false); return; }
     if (!parentName.trim()) { setFormError("Please enter the parent's name."); setSubmitting(false); return; }
     if (!parentPhone.trim()) { setFormError("Please enter the parent's phone."); setSubmitting(false); return; }
+    if (!parentEmail.trim()) { setFormError("Please enter the parent's email address."); setSubmitting(false); return; }
 
     const body = {
       first_name: firstName.trim(), last_name: lastName.trim(), age: parseInt(age), gender, blood_group: bloodGroup,
@@ -283,10 +449,17 @@ function FormView({ onSuccess, showToast }) {
         setFormSuccess(`Profile created for ${firstName}! 🎉`);
         showToast(`${firstName}'s health profile has been saved!`, "success");
         setTimeout(() => onSuccess(), 1500);
-      } else { setFormError(data.message || "Failed to create profile."); }
+      } else { 
+        if (data.error === "parent not registered") {
+          setFormError("parent not registered");
+        } else {
+          setFormError(data.message || "Failed to create profile.");
+        }
+      }
     } catch (err) { setFormError("Could not connect to the server."); }
     finally { setSubmitting(false); }
   };
+
 
   return (
     <section className="form-section">
@@ -704,7 +877,7 @@ function DetailView({ childId, onBack, onEdit, showToast }) {
 // ATTENDANCE VIEW COMPONENT
 // =============================================================
 
-function AttendanceView({ showToast }) {
+function AttendanceView({ user, showToast }) {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
@@ -712,11 +885,15 @@ function AttendanceView({ showToast }) {
   const fetchAttendance = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/attendance?date=${selectedDate}`);
+      let url = `${API_BASE}/attendance?date=${selectedDate}`;
+      if (user && user.role === 'teacher') {
+        url += `&teacher_username=${encodeURIComponent(user.username)}`;
+      }
+      const response = await fetch(url);
       if (response.ok) setRecords(await response.json());
     } catch (err) { showToast("Failed to load attendance.", "error"); }
     finally { setLoading(false); }
-  }, [selectedDate, showToast]);
+  }, [user, selectedDate, showToast]);
 
   useEffect(() => { fetchAttendance(); }, [fetchAttendance]);
 
@@ -1019,5 +1196,422 @@ function FeesView({ showToast }) {
   );
 }
 
+
+
+// =============================================================
+// LOGIN VIEW COMPONENT
+// =============================================================
+
+function LoginView({ onLogin, showToast }) {
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (!identifier.trim() || !password) {
+      setError("Username/Email and password are required");
+      return;
+    }
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier: identifier.trim(), password })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        onLogin(data.user);
+        showToast("Welcome back! 👋", "success");
+      } else {
+        setError(data.error || "Login failed");
+      }
+    } catch (err) {
+      setError("Could not connect to the server.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="login-screen">
+      <div className="login-card">
+        <div className="login-brand">
+          <span className="login-logo">🧒</span>
+          <h2>FirstCry Intellitots</h2>
+          <p>Child Health & Allergy Tracker Portal</p>
+        </div>
+        <form onSubmit={handleSubmit}>
+          {error && <div className="form-error"><span>❌</span> {error}</div>}
+          <div className="form-group">
+            <label>Username or Email</label>
+            <input
+              type="text"
+              placeholder="Enter username or email"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+            />
+          </div>
+          <div className="form-group">
+            <label>Password</label>
+            <input
+              type="password"
+              placeholder="Enter password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+          <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "15px" }} disabled={loading}>
+            {loading ? "Logging in..." : "Login"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+
+// =============================================================
+// USER MANAGEMENT VIEW COMPONENT
+// =============================================================
+
+function UserManagementView({ showToast }) {
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState("teacher");
+  const [loading, setLoading] = useState(false);
+  const [users, setUsers] = useState([]);
+  const [error, setError] = useState("");
+
+  const fetchUsers = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/users`);
+      if (response.ok) setUsers(await response.json());
+    } catch (err) { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (!username.trim() || !email.trim() || !password || !role) {
+      setError("All fields are required");
+      return;
+    }
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/users`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: username.trim(), email: email.trim(), password, role })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        showToast("User registered successfully! 🎉", "success");
+        setUsername("");
+        setEmail("");
+        setPassword("");
+        fetchUsers();
+      } else {
+        setError(data.error || "Failed to create user");
+      }
+    } catch (err) {
+      setError("Could not connect to server");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="dashboard-section">
+      <div className="dashboard-header">
+        <h1 className="dashboard-title">👥 User Management</h1>
+      </div>
+      <div className="detail-grid">
+        <div className="detail-card">
+          <div className="detail-card-title">➕ Register New User</div>
+          <form onSubmit={handleSubmit}>
+            {error && <div className="form-error mb-2"><span>❌</span> {error}</div>}
+            <div className="form-group mb-2">
+              <label>Username</label>
+              <input type="text" placeholder="e.g. priya" value={username} onChange={(e) => setUsername(e.target.value)} />
+            </div>
+            <div className="form-group mb-2">
+              <label>Email Address</label>
+              <input type="email" placeholder="e.g. priya@email.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+            </div>
+            <div className="form-group mb-2">
+              <label>Password</label>
+              <input type="password" placeholder="Enter password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            </div>
+            <div className="form-group mb-2">
+              <label>Role</label>
+              <select value={role} onChange={(e) => setRole(e.target.value)}>
+                <option value="teacher">Teacher</option>
+                <option value="parent">Parent</option>
+              </select>
+            </div>
+            <button type="submit" className="btn btn-primary" style={{ marginTop: "10px" }} disabled={loading}>
+              {loading ? "Registering..." : "Register User"}
+            </button>
+          </form>
+        </div>
+        <div className="detail-card">
+          <div className="detail-card-title">📋 Registered Users</div>
+          <div style={{ maxHeight: "400px", overflowY: "auto" }}>
+            <table className="children-table" style={{ width: "100%" }}>
+              <thead>
+                <tr>
+                  <th>Username</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map(u => (
+                  <tr key={u.id}>
+                    <td>{u.username}</td>
+                    <td>{u.email}</td>
+                    <td><span className={`badge ${u.role === 'admin' ? 'badge-high-risk' : u.role === 'teacher' ? 'badge-allergy' : 'badge-normal'}`}>{u.role}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+
+// =============================================================
+// PARENT PORTAL VIEW COMPONENT
+// =============================================================
+
+function ParentView({ user, showToast }) {
+  const [children, setChildren] = useState([]);
+  const [selectedChild, setSelectedChild] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [attendance, setAttendance] = useState([]);
+  const [activeTab, setActiveTab] = useState("health");
+
+  const fetchChildDetails = useCallback(async (childId) => {
+    setLoading(true);
+    try {
+      const [childRes, attRes] = await Promise.all([
+        fetch(`${API_BASE}/children/${childId}`),
+        fetch(`${API_BASE}/children/${childId}/attendance`)
+      ]);
+      if (childRes.ok) setSelectedChild(await childRes.json());
+      if (attRes.ok) setAttendance(await attRes.json());
+    } catch (err) {
+      showToast("Failed to load child details", "error");
+    } finally {
+      setLoading(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    const fetchParentChildren = async () => {
+      setLoading(true);
+      try {
+        const response = await fetch(`${API_BASE}/parent/children?email=${encodeURIComponent(user.email)}`);
+        if (response.ok) {
+          const data = await response.json();
+          setChildren(data);
+          if (data.length > 0) {
+            await fetchChildDetails(data[0].id);
+          }
+        }
+      } catch (err) {
+        showToast("Failed to load children list", "error");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchParentChildren();
+  }, [user.email, fetchChildDetails, showToast]);
+
+  const handleChildChange = (e) => {
+    const childId = parseInt(e.target.value);
+    const child = children.find(c => c.id === childId);
+    if (child) fetchChildDetails(childId);
+  };
+
+  if (loading && !selectedChild) {
+    return (
+      <div className="loading-container">
+        <div className="spinner"></div>
+        <p className="loading-text">Loading portal updates...</p>
+      </div>
+    );
+  }
+
+  if (children.length === 0) {
+    return (
+      <div className="empty-state">
+        <div className="empty-state-icon">🧒</div>
+        <h3>No Children Linked</h3>
+        <p>Your email ({user.email}) is not linked to any registered children yet. Please contact the administrator.</p>
+      </div>
+    );
+  }
+
+  return (
+    <section className="parent-portal-section">
+      <div className="parent-portal-header">
+        <div className="parent-portal-welcome">
+          <h2>👨‍👩‍👧 Parent Portal Dashboard</h2>
+          <p>Real-time health, meals, and attendance tracker updates</p>
+        </div>
+        {children.length > 1 && (
+          <div className="child-selector-wrapper">
+            <label style={{ fontWeight: 600, marginRight: "8px" }}>Select Child: </label>
+            <select className="filter-select" onChange={handleChildChange} value={selectedChild?.id || ""}>
+              {children.map(c => <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>)}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {selectedChild && (
+        <div className="parent-child-details">
+          <div className="detail-header" style={{ marginTop: 0 }}>
+            <div className="detail-header-info">
+              <div className="detail-avatar">{selectedChild.first_name.charAt(0)}</div>
+              <div>
+                <h1 className="detail-name">
+                  {selectedChild.first_name} {selectedChild.last_name}
+                  <span className={`badge ${selectedChild.risk_status === "High Risk" ? "badge-high-risk" : "badge-normal"}`} style={{ marginLeft: "12px" }}>
+                    {selectedChild.risk_status === "High Risk" ? "🔴" : "🟢"} {selectedChild.risk_status}
+                  </span>
+                </h1>
+                <div className="detail-meta">
+                  <span>🎂 {selectedChild.age} years old</span>
+                  <span>🏫 {selectedChild.classroom_name}</span>
+                  <span>🩸 {selectedChild.blood_group || "N/A"}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="detail-tabs">
+            <button className={`detail-tab ${activeTab === "health" ? "active" : ""}`} onClick={() => setActiveTab("health")}>🏥 Health & AI Summary</button>
+            <button className={`detail-tab ${activeTab === "attendance" ? "active" : ""}`} onClick={() => setActiveTab("attendance")}>📅 Attendance History</button>
+            <button className={`detail-tab ${activeTab === "meals" ? "active" : ""}`} onClick={() => setActiveTab("meals")}>🍽️ Meal Safety Checks</button>
+          </div>
+
+          {loading ? (
+            <div className="loading-container"><div className="spinner"></div><p>Refreshing data...</p></div>
+          ) : (
+            <div className="parent-tab-content" style={{ marginTop: "20px" }}>
+              {activeTab === "health" && (
+                <div className="detail-grid">
+                  <div className="detail-card">
+                    <div className="detail-card-title">⚠️ Known Allergies</div>
+                    {selectedChild.allergies && selectedChild.allergies.length > 0 ? selectedChild.allergies.map((a, i) => (
+                      <div className="allergy-detail-item" key={i}>
+                        <span className="allergy-name">{a.allergy_type || a}</span>
+                        {a.severity && <span className={`severity-badge severity-${a.severity.toLowerCase()}`}>{a.severity}</span>}
+                      </div>
+                    )) : <div className="no-data-message">✅ No known allergies</div>}
+                  </div>
+
+                  <div className="detail-card">
+                    <div className="detail-card-title">💊 Active Medications</div>
+                    {selectedChild.medications && selectedChild.medications.length > 0 ? selectedChild.medications.map((m) => (
+                      <div className="med-detail-item" key={m.id}>
+                        <h4>{m.medicine_name}</h4>
+                        <p>Dosage: {m.dosage || "Not specified"}</p>
+                        <p>Schedule: {m.schedule || "As needed"}</p>
+                      </div>
+                    )) : <div className="no-data-message">No active medications</div>}
+                  </div>
+
+                  {selectedChild.ai_summary && (
+                    <div className="detail-card full-width ai-summary-card">
+                      <div className="detail-card-title">🤖 AI Safety Summary (Gemini)</div>
+                      <div className="ai-summary-text">{selectedChild.ai_summary.summary}</div>
+                      {selectedChild.ai_summary.meal_suggestion && (
+                        <div className="ai-meal-suggestion">
+                          <span>🥗</span>
+                          <div><strong>Recommended Safe Meal: </strong>{selectedChild.ai_summary.meal_suggestion}</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === "attendance" && (
+                <div className="detail-card full-width">
+                  <div className="detail-card-title">📅 30-Day Attendance Log</div>
+                  {attendance.length > 0 ? (
+                    <div className="children-table-wrapper">
+                      <table className="children-table" style={{ width: "100%" }}>
+                        <thead>
+                          <tr>
+                            <th>Date</th>
+                            <th>Status</th>
+                            <th>Check In Time</th>
+                            <th>Notes</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {attendance.map(a => (
+                            <tr key={a.id}>
+                              <td>{a.date}</td>
+                              <td>
+                                <span className={`badge ${a.status === "Present" ? "badge-normal" : "badge-high-risk"}`}>
+                                  {a.status === "Present" ? "🟢" : "🔴"} {a.status}
+                                </span>
+                              </td>
+                              <td>{a.check_in_time || "—"}</td>
+                              <td>{a.notes || <span className="text-muted">—</span>}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : <div className="no-data-message">No attendance logged yet</div>}
+                </div>
+              )}
+
+              {activeTab === "meals" && (
+                <div className="detail-card full-width">
+                  <div className="detail-card-title">🍽️ Meal Safety Checklists</div>
+                  {selectedChild.meal_safety && selectedChild.meal_safety.length > 0 ? (
+                    <div className="meal-safety-grid">
+                      {selectedChild.meal_safety.map((meal, index) => (
+                        <div key={index} className={`meal-safety-item ${meal.status === "SAFE" ? "safe" : "restricted"}`}>
+                          <div className="meal-name">{meal.status === "SAFE" ? "✅" : "🚫"} {meal.meal_name}</div>
+                          <div className="meal-category">{meal.meal_category}</div>
+                          <div className="meal-status">{meal.status}</div>
+                          {meal.matched_allergens && meal.matched_allergens.length > 0 && (
+                            <div className="meal-allergen-match">
+                              ⚠️ Contains: {meal.matched_allergens.map((m) => `${m.matched_ingredient} (${m.allergy})`).join(", ")}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : <div className="no-data-message">No meal data available</div>}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
 
 export default App;

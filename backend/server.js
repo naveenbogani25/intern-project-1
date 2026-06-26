@@ -56,6 +56,28 @@ async function runMigrations() {
   try {
     console.log('[DB] Running database migrations if tables are missing...');
     
+    // Users table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(100) UNIQUE NOT NULL,
+        email VARCHAR(200) UNIQUE NOT NULL,
+        password VARCHAR(200) NOT NULL,
+        role VARCHAR(50) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Seed default admin if missing
+    const adminCheck = await pool.query("SELECT * FROM users WHERE username = 'admin'");
+    if (adminCheck.rows.length === 0) {
+      console.log('[DB] Seeding default admin user...');
+      await pool.query(`
+        INSERT INTO users (username, email, password, role)
+        VALUES ('admin', 'admin@intellitots.com', 'Admin@123', 'admin')
+      `);
+    }
+
     // Core Tracking Tables
     await pool.query(`
       CREATE TABLE IF NOT EXISTS classrooms (
@@ -233,6 +255,14 @@ let mockIdCounter = 4;
 let mockMilestoneIdCounter = 11;
 let mockFeeIdCounter = 7;
 let mockAttendanceIdCounter = 4;
+let mockUserIdCounter = 6;
+const MOCK_USERS = [
+  { id: 1, username: 'admin', email: 'admin@intellitots.com', password: 'Admin@123', role: 'admin' },
+  { id: 2, username: 'priya', email: 'priya@email.com', password: 'password123', role: 'teacher' },
+  { id: 3, username: 'anita', email: 'anita@email.com', password: 'password123', role: 'teacher' },
+  { id: 4, username: 'preet', email: 'preet.singh@email.com', password: 'password123', role: 'parent' },
+  { id: 5, username: 'raj', email: 'raj.patel@email.com', password: 'password123', role: 'parent' }
+];
 
 const MOCK_CLASSROOMS = [
   { id: 1, name: 'Butterfly Room', age_group: '2-3 years', teacher_name: 'Ms. Priya Sharma' },
@@ -470,12 +500,243 @@ async function getGeminiSummary(medicalNotes) {
 // API ROUTES
 // =============================================================
 
+// User Login Endpoint
+app.post('/api/login', async (req, res) => {
+  console.log('\n[API] POST /api/login');
+  try {
+    const { identifier, password } = req.body;
+    if (!identifier || !password) {
+      return res.status(400).json({ error: 'Username/Email and password are required' });
+    }
+
+    let user = null;
+    if (!usingMockData) {
+      const dbRes = await pool.query(
+        'SELECT * FROM users WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1)',
+        [identifier.trim()]
+      );
+      user = dbRes.rows[0];
+    } else {
+      user = MOCK_USERS.find(
+        u => u.username.toLowerCase() === identifier.trim().toLowerCase() ||
+             u.email.toLowerCase() === identifier.trim().toLowerCase()
+      );
+    }
+
+    if (!user || user.password !== password) {
+      return res.status(401).json({ error: 'Invalid username/email or password' });
+    }
+
+    return res.json({
+      message: 'Login successful!',
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.role
+      }
+    });
+  } catch (err) {
+    console.error(`[API ERROR] Login failed: ${err.message}`);
+    return res.status(500).json({ error: 'Internal server error', message: err.message });
+  }
+});
+
+// Admin User Registration Endpoint
+app.post('/api/users', async (req, res) => {
+  console.log('\n[API] POST /api/users - Registering new user...');
+  try {
+    const { username, email, password, role } = req.body;
+    if (!username || !email || !password || !role) {
+      return res.status(400).json({ error: 'All fields are required (username, email, password, role)' });
+    }
+
+    if (!usingMockData) {
+      const exists = await pool.query(
+        'SELECT id FROM users WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($2)',
+        [username.trim(), email.trim()]
+      );
+      if (exists.rows.length > 0) {
+        return res.status(400).json({ error: 'Username or email already registered' });
+      }
+
+      const userRes = await pool.query(
+        'INSERT INTO users (username, email, password, role) VALUES ($1, $2, $3, $4) RETURNING id',
+        [username.trim(), email.trim(), password, role]
+      );
+      return res.status(201).json({ message: 'User created successfully', userId: userRes.rows[0].id });
+    } else {
+      const exists = MOCK_USERS.some(
+        u => u.username.toLowerCase() === username.trim().toLowerCase() ||
+             u.email.toLowerCase() === email.trim().toLowerCase()
+      );
+      if (exists) {
+        return res.status(400).json({ error: 'Username or email already registered' });
+      }
+
+      const userId = mockUserIdCounter++;
+      MOCK_USERS.push({
+        id: userId,
+        username: username.trim(),
+        email: email.trim(),
+        password,
+        role
+      });
+      return res.status(201).json({ message: 'User created successfully (mock)', userId });
+    }
+  } catch (err) {
+    console.error(`[API ERROR] Create user failed: ${err.message}`);
+    return res.status(500).json({ error: 'Internal server error', message: err.message });
+  }
+});
+
+// Update Profile Endpoint
+app.put('/api/users/profile', async (req, res) => {
+  console.log('\n[API] PUT /api/users/profile - Updating profile...');
+  try {
+    const { userId, username, password } = req.body;
+    if (!userId || !username || !password) {
+      return res.status(400).json({ error: 'userId, username, and password are required' });
+    }
+
+    if (!usingMockData) {
+      const exists = await pool.query(
+        'SELECT id FROM users WHERE LOWER(username) = LOWER($1) AND id <> $2',
+        [username.trim(), parseInt(userId)]
+      );
+      if (exists.rows.length > 0) {
+        return res.status(400).json({ error: 'Username already taken' });
+      }
+
+      await pool.query(
+        'UPDATE users SET username = $1, password = $2 WHERE id = $3',
+        [username.trim(), password, parseInt(userId)]
+      );
+
+      const userRes = await pool.query('SELECT id, username, email, role FROM users WHERE id = $1', [parseInt(userId)]);
+      return res.json({ message: 'Profile updated successfully!', user: userRes.rows[0] });
+    } else {
+      const user = MOCK_USERS.find(u => u.id === parseInt(userId));
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const exists = MOCK_USERS.some(u => u.username.toLowerCase() === username.trim().toLowerCase() && u.id !== parseInt(userId));
+      if (exists) {
+        return res.status(400).json({ error: 'Username already taken' });
+      }
+
+      user.username = username.trim();
+      user.password = password;
+
+      return res.json({
+        message: 'Profile updated successfully! (mock)',
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          role: user.role
+        }
+      });
+    }
+  } catch (err) {
+    console.error(`[API ERROR] Update profile failed: ${err.message}`);
+    return res.status(500).json({ error: 'Internal server error', message: err.message });
+  }
+});
+
+// List Users Endpoint
+app.get('/api/users', async (req, res) => {
+  console.log('\n[API] GET /api/users');
+  try {
+    if (!usingMockData) {
+      const dbRes = await pool.query('SELECT id, username, email, role FROM users ORDER BY role, username');
+      return res.json(dbRes.rows);
+    } else {
+      const list = MOCK_USERS.map(u => ({ id: u.id, username: u.username, email: u.email, role: u.role }));
+      return res.json(list);
+    }
+  } catch (err) {
+    console.error(`[API ERROR] GET users failed: ${err.message}`);
+    return res.status(500).json({ error: 'Internal server error', message: err.message });
+  }
+});
+
+// Parent Children Fetch Endpoint
+app.get('/api/parent/children', async (req, res) => {
+  console.log('\n[API] GET /api/parent/children');
+  try {
+    const email = req.query.email;
+    if (!email) {
+      return res.status(400).json({ error: 'email is required' });
+    }
+
+    if (!usingMockData) {
+      const parentsRes = await pool.query(
+        'SELECT child_id FROM parents WHERE LOWER(email) = LOWER($1)',
+        [email.trim()]
+      );
+      const childIds = parentsRes.rows.map(r => r.child_id);
+      if (childIds.length === 0) {
+        return res.json([]);
+      }
+
+      const childrenRes = await pool.query(
+        `SELECT c.id, c.first_name, c.last_name, c.age, c.gender, c.blood_group, c.classroom_id, cl.name as classroom_name
+         FROM children c
+         LEFT JOIN classrooms cl ON c.classroom_id = cl.id
+         WHERE c.id = ANY($1)
+         ORDER BY c.first_name`,
+        [childIds]
+      );
+      
+      // Map allergies and medications just in case
+      const result = [];
+      for (const child of childrenRes.rows) {
+        const allergiesRes = await pool.query('SELECT allergy_type, severity FROM allergies WHERE child_id = $1', [child.id]);
+        const medicationsRes = await pool.query('SELECT medicine_name, dosage, schedule FROM medications WHERE child_id = $1', [child.id]);
+        result.push({
+          ...child,
+          allergies: allergiesRes.rows.map(a => a.allergy_type),
+          medications: medicationsRes.rows,
+          risk_status: isHighRisk(allergiesRes.rows) ? 'High Risk' : 'Normal'
+        });
+      }
+      return res.json(result);
+    } else {
+      const matchedChildren = [];
+      for (const child of MOCK_CHILDREN) {
+        const matches = child.parents.some(p => p.email.toLowerCase() === email.trim().toLowerCase());
+        if (matches) {
+          matchedChildren.push({
+            id: child.id,
+            first_name: child.first_name,
+            last_name: child.last_name,
+            age: child.age,
+            gender: child.gender,
+            blood_group: child.blood_group,
+            classroom_id: child.classroom_id,
+            classroom_name: child.classroom_name,
+            allergies: child.allergies.map(a => a.allergy_type),
+            medications: child.medications,
+            risk_status: isHighRisk(child.allergies) ? 'High Risk' : 'Normal'
+          });
+        }
+      }
+      return res.json(matchedChildren);
+    }
+  } catch (err) {
+    console.error(`[API ERROR] GET parent children failed: ${err.message}`);
+    return res.status(500).json({ error: 'Internal server error', message: err.message });
+  }
+});
+
 // 1. POST /api/children - Create child profile
 app.post('/api/children', async (req, res) => {
   console.log('\n[API] POST /api/children - Creating child profile...');
   try {
     const data = req.body;
-    const required = ['first_name', 'age', 'classroom_id', 'parent_name', 'parent_phone'];
+    const required = ['first_name', 'age', 'classroom_id', 'parent_name', 'parent_phone', 'parent_email'];
     const missing = required.filter(field => !data[field] || data[field] === '');
 
     if (missing.length > 0) {
@@ -483,7 +744,7 @@ app.post('/api/children', async (req, res) => {
       return res.status(400).json({
         error: 'Missing required fields',
         missing_fields: missing,
-        message: 'Please fill in all required fields: child\'s name, age, classroom, parent name, and parent phone.'
+        message: 'Please fill in all required fields: child\'s name, age, classroom, parent name, parent phone, and parent email.'
       });
     }
 
@@ -492,6 +753,16 @@ app.post('/api/children', async (req, res) => {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
+
+        // Check if parent email is registered in users table with role 'parent'
+        const parentUserCheck = await client.query(
+          "SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND role = 'parent'",
+          [data.parent_email.trim()]
+        );
+        if (parentUserCheck.rows.length === 0) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'parent not registered', message: 'parent not registered' });
+        }
 
         const childRes = await client.query(
           `INSERT INTO children (first_name, last_name, age, gender, blood_group, classroom_id, doctor_notes, admission_date, status)
@@ -517,7 +788,7 @@ app.post('/api/children', async (req, res) => {
             data.parent_name,
             data.parent_relation || 'Parent',
             data.parent_phone,
-            data.parent_email || ''
+            data.parent_email.trim()
           ]
         );
 
@@ -548,6 +819,14 @@ app.post('/api/children', async (req, res) => {
         client.release();
       }
     } else {
+      // Mock mode parent check
+      const parentUserExists = MOCK_USERS.some(
+        u => u.email.toLowerCase() === data.parent_email.trim().toLowerCase() && u.role === 'parent'
+      );
+      if (!parentUserExists) {
+        return res.status(400).json({ error: 'parent not registered', message: 'parent not registered' });
+      }
+
       childId = mockIdCounter++;
       let classObj = MOCK_CLASSROOMS.find(c => c.id === parseInt(data.classroom_id));
       const classroomName = classObj ? classObj.name : 'Unknown';
@@ -607,6 +886,7 @@ app.get('/api/children', async (req, res) => {
     const classroomFilter = (req.query.classroom || '').trim();
     const allergyFilter = (req.query.allergy_type || '').trim();
     const searchQuery = (req.query.search || '').trim().toLowerCase();
+    const teacherUsername = (req.query.teacher_username || '').trim().toLowerCase();
 
     const result = [];
 
@@ -622,6 +902,19 @@ app.get('/api/children', async (req, res) => {
       `;
       const params = [];
       let paramCount = 1;
+
+      if (teacherUsername) {
+        const teacherClassRes = await pool.query(
+          "SELECT id FROM classrooms WHERE LOWER(teacher_name) LIKE $1",
+          [`%${teacherUsername}%`]
+        );
+        const assignedClassroomIds = teacherClassRes.rows.map(r => r.id);
+        if (assignedClassroomIds.length === 0) {
+          return res.json([]);
+        }
+        query += ` AND c.classroom_id = ANY($${paramCount++})`;
+        params.push(assignedClassroomIds);
+      }
 
       if (classroomFilter) {
         query += ` AND cl.name = $${paramCount++}`;
@@ -663,7 +956,18 @@ app.get('/api/children', async (req, res) => {
         });
       }
     } else {
+      let assignedClassroomNames = [];
+      if (teacherUsername) {
+        assignedClassroomNames = MOCK_CLASSROOMS.filter(
+          c => c.teacher_name.toLowerCase().includes(teacherUsername)
+        ).map(c => c.name);
+        if (assignedClassroomNames.length === 0) {
+          return res.json([]);
+        }
+      }
+
       for (const child of MOCK_CHILDREN) {
+        if (teacherUsername && !assignedClassroomNames.includes(child.classroom_name)) continue;
         if (classroomFilter && child.classroom_name !== classroomFilter) continue;
         if (allergyFilter) {
           const types = child.allergies.map(a => a.allergy_type);
@@ -989,23 +1293,50 @@ app.delete('/api/children/:child_id', async (req, res) => {
 // 7. GET /api/attendance - Fetch attendance logs
 app.get('/api/attendance', async (req, res) => {
   const targetDate = req.query.date || new Date().toISOString().split('T')[0];
-  console.log(`\n[API] GET /api/attendance for date=${targetDate}`);
+  const teacherUsername = (req.query.teacher_username || '').trim().toLowerCase();
+  console.log(`\n[API] GET /api/attendance for date=${targetDate}, teacher=${teacherUsername}`);
 
   try {
     if (!usingMockData) {
-      const recordsRes = await pool.query(
-        `SELECT a.*, c.first_name, c.last_name, cl.name as classroom_name
-         FROM attendance a
-         JOIN children c ON a.child_id = c.id
-         LEFT JOIN classrooms cl ON c.classroom_id = cl.id
-         WHERE a.date = $1
-         ORDER BY c.first_name`,
-        [targetDate]
-      );
+      let query = `
+        SELECT a.*, c.first_name, c.last_name, cl.name as classroom_name
+        FROM attendance a
+        JOIN children c ON a.child_id = c.id
+        LEFT JOIN classrooms cl ON c.classroom_id = cl.id
+        WHERE a.date = $1
+      `;
+      const params = [targetDate];
+      
+      if (teacherUsername) {
+        const teacherClassRes = await pool.query(
+          "SELECT id FROM classrooms WHERE LOWER(teacher_name) LIKE $2",
+          [targetDate, `%${teacherUsername}%`]
+        );
+        const assignedClassroomIds = teacherClassRes.rows.map(r => r.id);
+        if (assignedClassroomIds.length === 0) {
+          return res.json([]);
+        }
+        query += ` AND c.classroom_id = ANY($2)`;
+        params.push(assignedClassroomIds);
+      }
+      query += ` ORDER BY c.first_name`;
+
+      const recordsRes = await pool.query(query, params);
       return res.json(recordsRes.rows);
     } else {
+      let assignedClassroomNames = [];
+      if (teacherUsername) {
+        assignedClassroomNames = MOCK_CLASSROOMS.filter(
+          c => c.teacher_name.toLowerCase().includes(teacherUsername)
+        ).map(c => c.name);
+        if (assignedClassroomNames.length === 0) {
+          return res.json([]);
+        }
+      }
+
       const result = [];
       for (const child of MOCK_CHILDREN) {
+        if (teacherUsername && !assignedClassroomNames.includes(child.classroom_name)) continue;
         const record = MOCK_ATTENDANCE.find(att => att.child_id === child.id && att.date === targetDate);
         result.push({
           id: record ? record.id : null,
@@ -1024,6 +1355,28 @@ app.get('/api/attendance', async (req, res) => {
     }
   } catch (err) {
     console.error(`[API ERROR] GET /api/attendance failed: ${err.message}`);
+    return res.status(500).json({ error: 'Internal server error', message: err.message });
+  }
+});
+
+// Child Attendance History Fetch Endpoint
+app.get('/api/children/:child_id/attendance', async (req, res) => {
+  const childId = parseInt(req.params.child_id);
+  console.log(`\n[API] GET /api/children/${childId}/attendance`);
+  try {
+    if (!usingMockData) {
+      const dbRes = await pool.query(
+        'SELECT * FROM attendance WHERE child_id = $1 ORDER BY date DESC LIMIT 30',
+        [childId]
+      );
+      return res.json(dbRes.rows);
+    } else {
+      const list = MOCK_ATTENDANCE.filter(a => a.child_id === childId)
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+      return res.json(list.slice(0, 30));
+    }
+  } catch (err) {
+    console.error(`[API ERROR] GET child attendance failed: ${err.message}`);
     return res.status(500).json({ error: 'Internal server error', message: err.message });
   }
 });
