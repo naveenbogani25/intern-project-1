@@ -169,6 +169,7 @@ function TeacherDashboardView({ user, onViewChild, showToast }) {
           onChange={(e) => setAllergyFilter(e.target.value)}
         >
           <option value="">All Allergies</option>
+          <option value="has_allergies">🔴 Has Allergies</option>
           {ALLERGY_OPTIONS.map((allergy) => (
             <option key={allergy} value={allergy}>
               {allergy}

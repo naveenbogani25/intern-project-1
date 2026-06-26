@@ -88,9 +88,15 @@ async function runMigrations() {
         capacity INT DEFAULT 20,
         age_group VARCHAR(50),
         teacher_name VARCHAR(150),
+        teacher_id INT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Migration: add teacher_id column if it doesn't exist (for existing DBs)
+    try {
+      await pool.query(`ALTER TABLE classrooms ADD COLUMN IF NOT EXISTS teacher_id INT`);
+    } catch (e) { /* column may already exist */ }
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS children (
@@ -225,6 +231,38 @@ async function runMigrations() {
         ('Sunshine Class', 18, '3-4 years', 'Ms. Anita Desai'),
         ('Rainbow Room', 20, '4-5 years', 'Mr. Rahul Verma')
       `);
+    }
+
+    // Auto-assign teacher_id to classrooms where teacher users exist but aren't linked
+    try {
+      const unlinkedClassrooms = await pool.query(
+        "SELECT id, teacher_name FROM classrooms WHERE teacher_id IS NULL AND teacher_name IS NOT NULL"
+      );
+      for (const cls of unlinkedClassrooms.rows) {
+        // Try to find a teacher user whose username partially matches the classroom's teacher_name
+        const teacherSearch = await pool.query(
+          "SELECT id FROM users WHERE role = 'teacher' AND (LOWER(teacher_name) LIKE '%' || LOWER(username) || '%' OR LOWER(username) LIKE '%' || LOWER($1) || '%') LIMIT 1",
+          [cls.teacher_name]
+        ).catch(() => null);
+        // Fallback: just try simple LIKE match
+        if (!teacherSearch || teacherSearch.rows.length === 0) {
+          const words = cls.teacher_name.replace(/^(Ms\.|Mr\.|Mrs\.)\s*/i, '').trim().split(/\s+/);
+          for (const word of words) {
+            if (word.length < 3) continue;
+            const res = await pool.query(
+              "SELECT id FROM users WHERE role = 'teacher' AND LOWER(username) LIKE $1 LIMIT 1",
+              [`%${word.toLowerCase()}%`]
+            );
+            if (res.rows.length > 0) {
+              await pool.query('UPDATE classrooms SET teacher_id = $1 WHERE id = $2', [res.rows[0].id, cls.id]);
+              console.log(`[DB] Auto-linked teacher user #${res.rows[0].id} to classroom "${cls.teacher_name}"`);
+              break;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.log('[DB] Auto-link teacher_id skipped:', e.message);
     }
 
     // Seed meals if none exist
@@ -1052,16 +1090,38 @@ app.get('/api/children', async (req, res) => {
       let paramCount = 1;
 
       if (teacherUsername) {
-        const teacherClassRes = await pool.query(
-          "SELECT id FROM classrooms WHERE LOWER(teacher_name) LIKE $1",
-          [`%${teacherUsername}%`]
+        // Step 1: Find teacher user ID
+        const teacherUserRes = await pool.query(
+          "SELECT id FROM users WHERE LOWER(username) = $1 AND role = 'teacher'",
+          [teacherUsername]
         );
-        const assignedClassroomIds = teacherClassRes.rows.map(r => r.id);
-        if (assignedClassroomIds.length === 0) {
-          return res.json([]);
+        let assignedClassroomIds = [];
+
+        if (teacherUserRes.rows.length > 0) {
+          const teacherId = teacherUserRes.rows[0].id;
+          // Step 2: Find classrooms assigned to this teacher by teacher_id
+          const teacherClassRes = await pool.query(
+            "SELECT id FROM classrooms WHERE teacher_id = $1",
+            [teacherId]
+          );
+          assignedClassroomIds = teacherClassRes.rows.map(r => r.id);
         }
-        query += ` AND c.classroom_id = ANY($${paramCount++})`;
-        params.push(assignedClassroomIds);
+
+        // Fallback: try name-based matching if teacher_id yields nothing
+        if (assignedClassroomIds.length === 0) {
+          const nameMatchRes = await pool.query(
+            "SELECT id FROM classrooms WHERE LOWER(teacher_name) LIKE $1",
+            [`%${teacherUsername}%`]
+          );
+          assignedClassroomIds = nameMatchRes.rows.map(r => r.id);
+        }
+
+        // If still no classrooms found, show ALL children (fallback for unassigned teachers)
+        if (assignedClassroomIds.length > 0) {
+          query += ` AND c.classroom_id = ANY($${paramCount++})`;
+          params.push(assignedClassroomIds);
+        }
+        // else: no filter applied = teacher sees all children
       }
 
       if (classroomFilter) {
@@ -1069,8 +1129,12 @@ app.get('/api/children', async (req, res) => {
         params.push(classroomFilter);
       }
       if (allergyFilter) {
-        query += ` AND a.allergy_type = $${paramCount++}`;
-        params.push(allergyFilter);
+        if (allergyFilter === 'has_allergies') {
+          query += ` AND c.id IN (SELECT DISTINCT child_id FROM allergies)`;
+        } else {
+          query += ` AND a.allergy_type = $${paramCount++}`;
+          params.push(allergyFilter);
+        }
       }
       if (searchQuery) {
         query += ` AND (LOWER(c.first_name) LIKE $${paramCount} OR LOWER(c.last_name) LIKE $${paramCount})`;
@@ -1078,17 +1142,17 @@ app.get('/api/children', async (req, res) => {
         params.push(`%${searchQuery}%`);
       }
       query += ' ORDER BY c.first_name ASC';
-
+ 
       const dbRes = await pool.query(query, params);
       const children = dbRes.rows;
-
+ 
       for (const child of children) {
         const allergiesRes = await pool.query(
           'SELECT allergy_type, severity FROM allergies WHERE child_id = $1',
           [child.id]
         );
         const allergies = allergiesRes.rows;
-
+ 
         result.push({
           id: child.id,
           first_name: child.first_name,
@@ -1113,13 +1177,17 @@ app.get('/api/children', async (req, res) => {
           return res.json([]);
         }
       }
-
+ 
       for (const child of MOCK_CHILDREN) {
         if (teacherUsername && !assignedClassroomNames.includes(child.classroom_name)) continue;
         if (classroomFilter && child.classroom_name !== classroomFilter) continue;
         if (allergyFilter) {
-          const types = child.allergies.map(a => a.allergy_type);
-          if (!types.includes(allergyFilter)) continue;
+          if (allergyFilter === 'has_allergies') {
+            if (!child.allergies || child.allergies.length === 0) continue;
+          } else {
+            const types = child.allergies.map(a => a.allergy_type);
+            if (!types.includes(allergyFilter)) continue;
+          }
         }
         if (searchQuery) {
           const fullName = `${child.first_name} ${child.last_name || ''}`.toLowerCase();
@@ -1269,13 +1337,50 @@ app.get('/api/classrooms', async (req, res) => {
   console.log('\n[API] GET /api/classrooms - Fetching classroom list...');
   try {
     if (!usingMockData) {
-      const dbRes = await pool.query('SELECT id, name, age_group, teacher_name FROM classrooms ORDER BY name');
+      const dbRes = await pool.query(`
+        SELECT cl.id, cl.name, cl.age_group, cl.teacher_name, cl.teacher_id,
+               u.username as teacher_username
+        FROM classrooms cl
+        LEFT JOIN users u ON cl.teacher_id = u.id
+        ORDER BY cl.name
+      `);
       return res.json(dbRes.rows);
     } else {
       return res.json(MOCK_CLASSROOMS);
     }
   } catch (err) {
     console.error(`[API ERROR] GET /api/classrooms failed: ${err.message}`);
+    return res.status(500).json({ error: 'Internal server error', message: err.message });
+  }
+});
+
+// 4b. PUT /api/classrooms/:id/assign-teacher - Assign a teacher to a classroom
+app.put('/api/classrooms/:id/assign-teacher', async (req, res) => {
+  const classroomId = parseInt(req.params.id);
+  const { teacher_id } = req.body;
+  console.log(`\n[API] PUT /api/classrooms/${classroomId}/assign-teacher - teacher_id=${teacher_id}`);
+
+  try {
+    if (!usingMockData) {
+      // Get teacher info
+      let teacherName = null;
+      if (teacher_id) {
+        const teacherRes = await pool.query('SELECT username, email FROM users WHERE id = $1', [teacher_id]);
+        if (teacherRes.rows.length > 0) {
+          teacherName = teacherRes.rows[0].username;
+        }
+      }
+      
+      await pool.query(
+        'UPDATE classrooms SET teacher_id = $1, teacher_name = COALESCE($2, teacher_name) WHERE id = $3',
+        [teacher_id || null, teacherName, classroomId]
+      );
+      return res.json({ message: 'Teacher assigned successfully' });
+    } else {
+      return res.json({ message: 'Teacher assigned (mock)' });
+    }
+  } catch (err) {
+    console.error(`[API ERROR] Assign teacher failed: ${err.message}`);
     return res.status(500).json({ error: 'Internal server error', message: err.message });
   }
 });
@@ -1447,30 +1552,64 @@ app.get('/api/attendance', async (req, res) => {
   try {
     if (!usingMockData) {
       let query = `
-        SELECT a.*, c.first_name, c.last_name, cl.name as classroom_name
-        FROM attendance a
-        JOIN children c ON a.child_id = c.id
+        SELECT c.id as child_id, c.first_name, c.last_name, cl.name as classroom_name,
+               a.id as id, a.status, a.check_in_time, a.check_out_time, a.notes
+        FROM children c
         LEFT JOIN classrooms cl ON c.classroom_id = cl.id
-        WHERE a.date = $1
+        LEFT JOIN attendance a ON c.id = a.child_id AND a.date = $1
+        WHERE c.status = 'Active'
       `;
       const params = [targetDate];
+      let paramCount = 2;
       
       if (teacherUsername) {
-        const teacherClassRes = await pool.query(
-          "SELECT id FROM classrooms WHERE LOWER(teacher_name) LIKE $1",
-          [`%${teacherUsername}%`]
+        // Step 1: Find teacher user ID
+        const teacherUserRes = await pool.query(
+          "SELECT id FROM users WHERE LOWER(username) = $1 AND role = 'teacher'",
+          [teacherUsername]
         );
-        const assignedClassroomIds = teacherClassRes.rows.map(r => r.id);
-        if (assignedClassroomIds.length === 0) {
-          return res.json([]);
+        let assignedClassroomIds = [];
+
+        if (teacherUserRes.rows.length > 0) {
+          const teacherId = teacherUserRes.rows[0].id;
+          const teacherClassRes = await pool.query(
+            "SELECT id FROM classrooms WHERE teacher_id = $1",
+            [teacherId]
+          );
+          assignedClassroomIds = teacherClassRes.rows.map(r => r.id);
         }
-        query += ` AND c.classroom_id = ANY($2)`;
-        params.push(assignedClassroomIds);
+
+        // Fallback: try name-based matching
+        if (assignedClassroomIds.length === 0) {
+          const nameMatchRes = await pool.query(
+            "SELECT id FROM classrooms WHERE LOWER(teacher_name) LIKE $1",
+            [`%${teacherUsername}%`]
+          );
+          assignedClassroomIds = nameMatchRes.rows.map(r => r.id);
+        }
+
+        // If still no classrooms, show all children (fallback)
+        if (assignedClassroomIds.length > 0) {
+          query += ` AND c.classroom_id = ANY($${paramCount++})`;
+          params.push(assignedClassroomIds);
+        }
       }
       query += ` ORDER BY c.first_name`;
 
       const recordsRes = await pool.query(query, params);
-      return res.json(recordsRes.rows);
+      const formatted = recordsRes.rows.map(r => ({
+        id: r.id,
+        child_id: r.child_id,
+        first_name: r.first_name,
+        last_name: r.last_name || '',
+        classroom_name: r.classroom_name || 'Unassigned',
+        date: targetDate,
+        status: r.status || 'Not Marked',
+        check_in_time: r.check_in_time || null,
+        check_out_time: r.check_out_time || null,
+        notes: r.notes || ''
+      }));
+      return res.json(formatted);
     } else {
       let assignedClassroomNames = [];
       if (teacherUsername) {
