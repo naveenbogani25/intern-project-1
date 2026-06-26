@@ -2,28 +2,58 @@ import React, { useState, useEffect, useCallback } from "react";
 import { API_BASE, ALLERGY_OPTIONS, AVATAR_COLORS } from "../config";
 
 export default function AdminPortal({ user, showToast }) {
-  const [currentView, setCurrentView] = useState("dashboard");
-  const [selectedChildId, setSelectedChildId] = useState(null);
-  const [editChildData, setEditChildData] = useState(null);
+  const [currentView, setCurrentView] = useState(() => {
+    return sessionStorage.getItem("adminPortalView") || "dashboard";
+  });
+  const [selectedChildId, setSelectedChildId] = useState(() => {
+    const id = sessionStorage.getItem("adminSelectedChildId");
+    return id ? parseInt(id) : null;
+  });
+  const [editChildData, setEditChildData] = useState(() => {
+    const data = sessionStorage.getItem("adminEditChildData");
+    return data ? JSON.parse(data) : null;
+  });
 
   const goToDashboard = () => {
+    sessionStorage.setItem("adminPortalView", "dashboard");
+    sessionStorage.removeItem("adminSelectedChildId");
+    sessionStorage.removeItem("adminEditChildData");
     setCurrentView("dashboard");
     setSelectedChildId(null);
     setEditChildData(null);
   };
-  const goToForm = () => setCurrentView("form");
+  const goToForm = () => {
+    sessionStorage.setItem("adminPortalView", "form");
+    setCurrentView("form");
+  };
   const goToDetail = (childId) => {
+    sessionStorage.setItem("adminPortalView", "detail");
+    sessionStorage.setItem("adminSelectedChildId", String(childId));
     setSelectedChildId(childId);
     setCurrentView("detail");
   };
   const goToEdit = (childData) => {
+    sessionStorage.setItem("adminPortalView", "edit");
+    sessionStorage.setItem("adminEditChildData", JSON.stringify(childData));
     setEditChildData(childData);
     setCurrentView("edit");
   };
-  const goToAttendance = () => setCurrentView("attendance");
-  const goToMeals = () => setCurrentView("meals");
-  const goToFees = () => setCurrentView("fees");
-  const goToUserMgmt = () => setCurrentView("usermgmt");
+  const goToAttendance = () => {
+    sessionStorage.setItem("adminPortalView", "attendance");
+    setCurrentView("attendance");
+  };
+  const goToMeals = () => {
+    sessionStorage.setItem("adminPortalView", "meals");
+    setCurrentView("meals");
+  };
+  const goToFees = () => {
+    sessionStorage.setItem("adminPortalView", "fees");
+    setCurrentView("fees");
+  };
+  const goToUserMgmt = () => {
+    sessionStorage.setItem("adminPortalView", "usermgmt");
+    setCurrentView("usermgmt");
+  };
 
   return (
     <div className="admin-portal-layout">

@@ -6,7 +6,14 @@ export default function ParentPortal({ user, showToast }) {
   const [selectedChild, setSelectedChild] = useState(null);
   const [loading, setLoading] = useState(true);
   const [attendance, setAttendance] = useState([]);
-  const [activeTab, setActiveTab] = useState("health");
+  const [activeTab, setActiveTab] = useState(() => {
+    return sessionStorage.getItem("parentPortalTab") || "health";
+  });
+
+  const handleTabChange = (tab) => {
+    sessionStorage.setItem("parentPortalTab", tab);
+    setActiveTab(tab);
+  };
 
   const fetchChildDetails = useCallback(async (childId) => {
     setLoading(true);
@@ -132,19 +139,19 @@ export default function ParentPortal({ user, showToast }) {
           <div className="detail-tabs">
             <button
               className={`detail-tab ${activeTab === "health" ? "active" : ""}`}
-              onClick={() => setActiveTab("health")}
+              onClick={() => handleTabChange("health")}
             >
               🏥 Health & AI Summary
             </button>
             <button
               className={`detail-tab ${activeTab === "attendance" ? "active" : ""}`}
-              onClick={() => setActiveTab("attendance")}
+              onClick={() => handleTabChange("attendance")}
             >
               📅 Attendance History
             </button>
             <button
               className={`detail-tab ${activeTab === "meals" ? "active" : ""}`}
-              onClick={() => setActiveTab("meals")}
+              onClick={() => handleTabChange("meals")}
             >
               🍽️ Meal Safety Checks
             </button>

@@ -2,19 +2,34 @@ import React, { useState, useEffect, useCallback } from "react";
 import { API_BASE, ALLERGY_OPTIONS, AVATAR_COLORS } from "../config";
 
 export default function TeacherPortal({ user, showToast }) {
-  const [currentView, setCurrentView] = useState("dashboard");
-  const [selectedChildId, setSelectedChildId] = useState(null);
+  const [currentView, setCurrentView] = useState(() => {
+    return sessionStorage.getItem("teacherPortalView") || "dashboard";
+  });
+  const [selectedChildId, setSelectedChildId] = useState(() => {
+    const id = sessionStorage.getItem("teacherSelectedChildId");
+    return id ? parseInt(id) : null;
+  });
 
   const goToDashboard = () => {
+    sessionStorage.setItem("teacherPortalView", "dashboard");
+    sessionStorage.removeItem("teacherSelectedChildId");
     setCurrentView("dashboard");
     setSelectedChildId(null);
   };
   const goToDetail = (childId) => {
+    sessionStorage.setItem("teacherPortalView", "detail");
+    sessionStorage.setItem("teacherSelectedChildId", String(childId));
     setSelectedChildId(childId);
     setCurrentView("detail");
   };
-  const goToAttendance = () => setCurrentView("attendance");
-  const goToMeals = () => setCurrentView("meals");
+  const goToAttendance = () => {
+    sessionStorage.setItem("teacherPortalView", "attendance");
+    setCurrentView("attendance");
+  };
+  const goToMeals = () => {
+    sessionStorage.setItem("teacherPortalView", "meals");
+    setCurrentView("meals");
+  };
 
   return (
     <div className="teacher-portal-layout">

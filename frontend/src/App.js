@@ -3,7 +3,7 @@
 // Main App Shell Router (Refactored & Modularized)
 // =============================================================
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { API_BASE } from "./config";
 import UserProfile from "./components/UserProfile";
 import ParentPortal from "./components/ParentPortal";
@@ -15,10 +15,10 @@ function App() {
   const [toast, setToast] = useState(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
 
-  const showToast = (message, type = "success") => {
+  const showToast = useCallback((message, type = "success") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
-  };
+  }, []);
 
   const handleLogin = (loggedInUser) => {
     setUser(loggedInUser);
@@ -29,6 +29,7 @@ function App() {
   const handleLogout = () => {
     setUser(null);
     localStorage.removeItem("user");
+    sessionStorage.clear();
   };
 
   const handleOpenProfile = () => {
