@@ -23,17 +23,17 @@ app.use(express.json());
 
 let pool = null;
 let usingMockData = false;
+let dbConnectionError = null;
 
 const connectionString = process.env.DATABASE_URL || 'postgresql://postgres.dwabqnflxvtkehzsrtph:V92A2yvaTVwy1O1s@aws-1-ap-southeast-2.pooler.supabase.com:5432/postgres';
 
 async function initDatabase() {
   try {
     console.log('[DB] Connecting to PostgreSQL database...');
+    const isLocalhost = connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
     pool = new Pool({
       connectionString: connectionString,
-      ssl: connectionString.includes('supabase.com') || connectionString.includes('render.com')
-        ? { rejectUnauthorized: false }
-        : false
+      ssl: isLocalhost ? false : { rejectUnauthorized: false }
     });
 
     // Verify database connection
@@ -44,7 +44,9 @@ async function initDatabase() {
     // Auto-migrate tables if not present
     await runMigrations();
     usingMockData = false;
+    dbConnectionError = null;
   } catch (err) {
+    dbConnectionError = err;
     console.error(`[DB ERROR] Could not connect to PostgreSQL: ${err.message}`);
     console.warn('[DB] Falling back to in-memory MOCK DATA mode.');
     usingMockData = true;
@@ -239,6 +241,122 @@ async function runMigrations() {
         ('Egg Fried Rice', 'rice, eggs, soy sauce, vegetables, sesame oil', 'Lunch', '3+ years', FALSE),
         ('Mixed Fruit Salad', 'apple, banana, grapes, orange, pomegranate', 'Snack', '2+ years', TRUE)
       `);
+    }
+
+    // Seed default demo users if they don't exist (excluding admin which is seeded above)
+    const usersCheck = await pool.query("SELECT COUNT(*) as count FROM users WHERE username <> 'admin'");
+    if (parseInt(usersCheck.rows[0].count) === 0) {
+      console.log('[DB] Seeding default demo users (priya, anita, preet, raj, vikram)...');
+      await pool.query(`
+        INSERT INTO users (username, email, password, role) VALUES
+        ('priya', 'priya@email.com', 'password123', 'teacher'),
+        ('anita', 'anita@email.com', 'password123', 'teacher'),
+        ('preet', 'preet.singh@email.com', 'password123', 'parent'),
+        ('raj', 'raj.patel@email.com', 'password123', 'parent'),
+        ('vikram', 'vikram.s@email.com', 'password123', 'parent')
+      `);
+    }
+
+    // Seed children if none exist
+    const childrenCheck = await pool.query('SELECT COUNT(*) as count FROM children');
+    if (parseInt(childrenCheck.rows[0].count) === 0) {
+      console.log('[DB] Seeding default children and health logs...');
+      
+      // Get classroom IDs dynamically to link children correctly
+      const classRes = await pool.query('SELECT id, name FROM classrooms');
+      const butterflyId = classRes.rows.find(c => c.name === 'Butterfly Room')?.id;
+      const sunshineId = classRes.rows.find(c => c.name === 'Sunshine Class')?.id;
+      const rainbowId = classRes.rows.find(c => c.name === 'Rainbow Room')?.id;
+
+      // 1. Aarav Patel (Sunshine Class)
+      const aaravRes = await pool.query(`
+        INSERT INTO children (first_name, last_name, age, gender, blood_group, classroom_id, doctor_notes, status, admission_date)
+        VALUES ('Aarav', 'Patel', 3, 'Male', 'A+', $1, 
+                'Aarav has a history of severe peanut allergy confirmed by skin prick test. He also shows mild lactose intolerance. Prescribed EpiPen for emergencies. Avoid all tree nuts and peanut-based products. Monitor for skin rashes after dairy consumption. Last checkup: January 2026.',
+                'Active', CURRENT_DATE) RETURNING id
+      `, [sunshineId]);
+      const aaravId = aaravRes.rows[0].id;
+
+      // 2. Diya Sharma (Rainbow Room)
+      const diyaRes = await pool.query(`
+        INSERT INTO children (first_name, last_name, age, gender, blood_group, classroom_id, doctor_notes, status, admission_date)
+        VALUES ('Diya', 'Sharma', 4, 'Female', 'B+', $1, 
+                'Diya is a healthy child with no major medical concerns. Routine vaccinations are up to date. She had a minor cold last month, fully recovered. No known food allergies. Parents report she is a picky eater but nutritionally adequate.',
+                'Active', CURRENT_DATE) RETURNING id
+      `, [rainbowId]);
+      const diyaId = diyaRes.rows[0].id;
+
+      // 3. Kabir Singh (Butterfly Room)
+      const kabirRes = await pool.query(`
+        INSERT INTO children (first_name, last_name, age, gender, blood_group, classroom_id, doctor_notes, status, admission_date)
+        VALUES ('Kabir', 'Singh', 2, 'Male', 'O+', $1, 
+                'Kabir has severe dairy allergy - anaphylactic risk. Must avoid all milk, cheese, yogurt, butter, and whey products. Also allergic to eggs (moderate severity - causes hives). Prescribed antihistamine drops. Parents carry backup EpiPen. Soy-based formula recommended as milk alternative.',
+                'Active', CURRENT_DATE) RETURNING id
+      `, [butterflyId]);
+      const kabirId = kabirRes.rows[0].id;
+
+      // Seed parents
+      await pool.query(`
+        INSERT INTO parents (child_id, name, relation, phone, email, is_emergency_contact) VALUES
+        ($1, 'Raj Patel', 'Father', '+91-9876543210', 'raj.patel@email.com', TRUE),
+        ($1, 'Meera Patel', 'Mother', '+91-9876543211', 'meera.patel@email.com', TRUE),
+        ($2, 'Vikram Sharma', 'Father', '+91-9123456789', 'vikram.s@email.com', TRUE),
+        ($3, 'Preet Singh', 'Father', '+91-9988776655', 'preet.singh@email.com', TRUE),
+        ($3, 'Simran Singh', 'Mother', '+91-9988776656', 'simran.s@email.com', FALSE)
+      `, [aaravId, diyaId, kabirId]);
+
+      // Seed allergies
+      await pool.query(`
+        INSERT INTO allergies (child_id, allergy_type, severity, doctor_confirmed) VALUES
+        ($1, 'Peanuts', 'Severe', TRUE),
+        ($1, 'Dairy', 'Mild', TRUE),
+        ($2, 'Dairy', 'Severe', TRUE),
+        ($2, 'Eggs', 'Moderate', TRUE)
+      `, [aaravId, kabirId]);
+
+      // Seed medications
+      await pool.query(`
+        INSERT INTO medications (child_id, medicine_name, dosage, schedule) VALUES
+        ($1, 'EpiPen (Epinephrine)', '0.15mg auto-injector', 'Emergency use only'),
+        ($1, 'Cetirizine', '2.5ml once daily', 'Evening after dinner'),
+        ($2, 'Allegra Drops', '1ml twice daily', 'Morning and evening')
+      `, [aaravId, kabirId]);
+
+      // Seed milestones
+      await pool.query(`
+        INSERT INTO milestones (child_id, category, milestone_name, status, achieved_date) VALUES
+        ($1, 'Cognitive', 'Can count to 10', 'Achieved', '2026-05-15'),
+        ($1, 'Physical', 'Can hop on one foot', 'In Progress', NULL),
+        ($1, 'Social', 'Plays cooperatively with peers', 'Achieved', '2026-04-20'),
+        ($1, 'Language', 'Speaks in 4-5 word sentences', 'Achieved', '2026-03-10'),
+        ($2, 'Cognitive', 'Recognizes basic shapes', 'Achieved', '2026-02-28'),
+        ($2, 'Physical', 'Can catch a bounced ball', 'Achieved', '2026-05-01'),
+        ($2, 'Language', 'Tells simple stories', 'In Progress', NULL),
+        ($3, 'Physical', 'Walks steadily', 'Achieved', '2026-01-15'),
+        ($3, 'Language', 'Says 10+ words', 'In Progress', NULL),
+        ($3, 'Social', 'Shows interest in other children', 'Not Started', NULL)
+      `, [aaravId, diyaId, kabirId]);
+
+      // Seed fees
+      await pool.query(`
+        INSERT INTO fees (child_id, fee_type, amount, due_date, paid_date, status, payment_method) VALUES
+        ($1, 'Tuition', 15000.00, '2026-06-01', NULL, 'Overdue', NULL),
+        ($1, 'Meals', 3000.00, '2026-06-01', '2026-05-28', 'Paid', 'UPI'),
+        ($2, 'Tuition', 15000.00, '2026-06-01', '2026-06-01', 'Paid', 'Card'),
+        ($2, 'Transport', 2500.00, '2026-07-01', NULL, 'Pending', NULL),
+        ($3, 'Tuition', 15000.00, '2026-06-01', NULL, 'Overdue', NULL),
+        ($3, 'Admission', 5000.00, '2026-01-15', '2026-01-15', 'Paid', 'Cash')
+      `, [aaravId, diyaId, kabirId]);
+
+      // Seed initial attendance (for today)
+      await pool.query(`
+        INSERT INTO attendance (child_id, date, status, check_in_time, check_out_time, notes) VALUES
+        ($1, CURRENT_DATE, 'Present', '08:45:00', NULL, ''),
+        ($2, CURRENT_DATE, 'Present', '09:00:00', NULL, ''),
+        ($3, CURRENT_DATE, 'Absent', NULL, NULL, 'Parent called - mild fever')
+      `, [aaravId, diyaId, kabirId]);
+
+      console.log('[DB] Seeding of children and medical records completed.');
     }
 
     console.log('[DB] Migrations and seeding check completed.');
@@ -499,6 +617,36 @@ async function getGeminiSummary(medicalNotes) {
 // =============================================================
 // API ROUTES
 // =============================================================
+
+// Database Status Diagnostic Endpoint
+app.get('/api/db-status', async (req, res) => {
+  try {
+    if (usingMockData) {
+      return res.json({
+        status: 'mock',
+        message: 'Using in-memory mock data.',
+        dbError: dbConnectionError ? {
+          message: dbConnectionError.message,
+          code: dbConnectionError.code,
+          stack: dbConnectionError.stack
+        } : null
+      });
+    } else {
+      const dbRes = await pool.query('SELECT NOW()');
+      return res.json({
+        status: 'connected',
+        message: 'Successfully connected to PostgreSQL database.',
+        time: dbRes.rows[0].now
+      });
+    }
+  } catch (err) {
+    return res.json({
+      status: 'error',
+      message: 'Failed to verify database connection.',
+      error: err.message
+    });
+  }
+});
 
 // User Login Endpoint
 app.post('/api/login', async (req, res) => {
@@ -1390,19 +1538,23 @@ app.post('/api/attendance', async (req, res) => {
     const attDate = data.date || new Date().toISOString().split('T')[0];
     const status = data.status || 'Present';
     const notes = data.notes || '';
-    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    const dateObj = new Date();
+    const h = String(dateObj.getHours()).padStart(2, '0');
+    const m = String(dateObj.getMinutes()).padStart(2, '0');
+    const nowTime = `${h}:${m}`;
 
     if (!usingMockData) {
       const existing = await pool.query('SELECT id FROM attendance WHERE child_id=$1 AND date=$2', [childId, attDate]);
+      const shouldCheckIn = ['Present', 'Late'].includes(status);
       if (existing.rows.length > 0) {
         await pool.query(
           'UPDATE attendance SET status=$1, check_in_time=$2, notes=$3 WHERE id=$4',
-          [status, status === 'Present' ? nowTime : null, notes, existing.rows[0].id]
+          [status, shouldCheckIn ? nowTime : null, notes, existing.rows[0].id]
         );
       } else {
         await pool.query(
           'INSERT INTO attendance (child_id, date, status, check_in_time, notes) VALUES ($1, $2, $3, $4, $5)',
-          [childId, attDate, status, status === 'Present' ? nowTime : null, notes]
+          [childId, attDate, status, shouldCheckIn ? nowTime : null, notes]
         );
       }
       console.log(`[DB] Marked attendance for child ID ${childId} as ${status}`);
