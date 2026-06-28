@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { API_BASE, ALLERGY_OPTIONS, AVATAR_COLORS } from "../config";
-import IndianHealthGuide from "./IndianHealthGuide";
+
 
 export default function TeacherPortal({ user, showToast }) {
   const [currentView, setCurrentView] = useState(() => {
-    return sessionStorage.getItem("teacherPortalView") || "dashboard";
+    const view = sessionStorage.getItem("teacherPortalView") || "dashboard";
+    return view === "indianGuide" ? "dashboard" : view;
   });
   const [selectedChildId, setSelectedChildId] = useState(() => {
     const id = sessionStorage.getItem("teacherSelectedChildId");
@@ -31,10 +32,7 @@ export default function TeacherPortal({ user, showToast }) {
     sessionStorage.setItem("teacherPortalView", "meals");
     setCurrentView("meals");
   };
-  const goToIndianGuide = () => {
-    sessionStorage.setItem("teacherPortalView", "indianGuide");
-    setCurrentView("indianGuide");
-  };
+
 
   return (
     <div className="teacher-portal-layout">
@@ -54,9 +52,7 @@ export default function TeacherPortal({ user, showToast }) {
         <button className={`sub-nav-btn ${currentView === "meals" ? "active" : ""}`} onClick={goToMeals}>
           🍽️ Meals & Safety
         </button>
-        <button className={`sub-nav-btn ${currentView === "indianGuide" ? "active" : ""}`} onClick={goToIndianGuide}>
-          🇮🇳 Indian Health Guide
-        </button>
+
       </nav>
 
       <div className="portal-content-area" style={{ marginTop: "16px" }}>
@@ -68,11 +64,7 @@ export default function TeacherPortal({ user, showToast }) {
         )}
         {currentView === "attendance" && <TeacherAttendanceView user={user} showToast={showToast} />}
         {currentView === "meals" && <TeacherMealsView showToast={showToast} />}
-        {currentView === "indianGuide" && (
-          <div className="detail-card full-width">
-            <IndianHealthGuide />
-          </div>
-        )}
+
       </div>
     </div>
   );

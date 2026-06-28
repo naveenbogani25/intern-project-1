@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { API_BASE, ALLERGY_OPTIONS, HEALTH_ISSUE_OPTIONS, AVATAR_COLORS } from "../config";
-import IndianHealthGuide from "./IndianHealthGuide";
+
 
 export default function AdminPortal({ user, showToast }) {
   const [currentView, setCurrentView] = useState(() => {
-    return sessionStorage.getItem("adminPortalView") || "dashboard";
+    const view = sessionStorage.getItem("adminPortalView") || "dashboard";
+    return view === "indianGuide" ? "dashboard" : view;
   });
   const [selectedChildId, setSelectedChildId] = useState(() => {
     const id = sessionStorage.getItem("adminSelectedChildId");
@@ -52,10 +53,7 @@ export default function AdminPortal({ user, showToast }) {
     sessionStorage.setItem("adminPortalView", "usermgmt");
     setCurrentView("usermgmt");
   };
-  const goToIndianGuide = () => {
-    sessionStorage.setItem("adminPortalView", "indianGuide");
-    setCurrentView("indianGuide");
-  };
+
 
   return (
     <div className="admin-portal-layout">
@@ -75,9 +73,7 @@ export default function AdminPortal({ user, showToast }) {
         <button className={`sub-nav-btn ${currentView === "usermgmt" ? "active" : ""}`} onClick={goToUserMgmt}>
           👥 Users
         </button>
-        <button className={`sub-nav-btn ${currentView === "indianGuide" ? "active" : ""}`} onClick={goToIndianGuide}>
-          🇮🇳 Indian Health Guide
-        </button>
+
       </nav>
 
       <div className="portal-content-area" style={{ marginTop: "16px" }}>
@@ -103,11 +99,7 @@ export default function AdminPortal({ user, showToast }) {
         {currentView === "usermgmt" && (
           <UserManagementView showToast={showToast} />
         )}
-        {currentView === "indianGuide" && (
-          <div className="detail-card full-width">
-            <IndianHealthGuide />
-          </div>
-        )}
+
       </div>
     </div>
   );

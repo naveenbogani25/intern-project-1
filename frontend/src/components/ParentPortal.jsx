@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { API_BASE } from "../config";
-import IndianHealthGuide from "./IndianHealthGuide";
+
 
 export default function ParentPortal({ user, showToast }) {
   const [children, setChildren] = useState([]);
@@ -8,7 +8,8 @@ export default function ParentPortal({ user, showToast }) {
   const [loading, setLoading] = useState(true);
   const [attendance, setAttendance] = useState([]);
   const [activeTab, setActiveTab] = useState(() => {
-    return sessionStorage.getItem("parentPortalTab") || "health";
+    const tab = sessionStorage.getItem("parentPortalTab") || "health";
+    return tab === "indianGuide" ? "health" : tab;
   });
 
   const handleTabChange = (tab) => {
@@ -156,12 +157,7 @@ export default function ParentPortal({ user, showToast }) {
             >
               🍽️ Meal Safety Checks
             </button>
-            <button
-              className={`detail-tab ${activeTab === "indianGuide" ? "active" : ""}`}
-              onClick={() => handleTabChange("indianGuide")}
-            >
-              🇮🇳 Indian Health Guide
-            </button>
+
           </div>
 
           {loading ? (
@@ -313,11 +309,7 @@ export default function ParentPortal({ user, showToast }) {
                 </div>
               )}
 
-              {activeTab === "indianGuide" && (
-                <div className="detail-card full-width">
-                  <IndianHealthGuide />
-                </div>
-              )}
+
             </div>
           )}
         </div>
