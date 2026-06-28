@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { API_BASE } from "../config";
+import IndianHealthGuide from "./IndianHealthGuide";
 
 export default function ParentPortal({ user, showToast }) {
   const [children, setChildren] = useState([]);
@@ -155,6 +156,12 @@ export default function ParentPortal({ user, showToast }) {
             >
               🍽️ Meal Safety Checks
             </button>
+            <button
+              className={`detail-tab ${activeTab === "indianGuide" ? "active" : ""}`}
+              onClick={() => handleTabChange("indianGuide")}
+            >
+              🇮🇳 Indian Health Guide
+            </button>
           </div>
 
           {loading ? (
@@ -181,6 +188,21 @@ export default function ParentPortal({ user, showToast }) {
                       ))
                     ) : (
                       <div className="no-data-message">✅ No known allergies</div>
+                    )}
+                  </div>
+
+                  <div className="detail-card">
+                    <div className="detail-card-title">🏥 Diagnosed Health Issues</div>
+                    {selectedChild.health_issues && selectedChild.health_issues.length > 0 ? (
+                      <div className="allergy-badges" style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "10px" }}>
+                        {selectedChild.health_issues.map((issue, i) => (
+                          <span key={i} className="badge badge-allergy" style={{ background: "rgba(99, 102, 241, 0.1)", color: "var(--color-primary)", border: "1px solid rgba(99, 102, 241, 0.2)" }}>
+                            ⚠️ {issue}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="no-data-message">✅ No diagnosed health issues</div>
                     )}
                   </div>
 
@@ -288,6 +310,12 @@ export default function ParentPortal({ user, showToast }) {
                   ) : (
                     <div className="no-data-message">No meal data available</div>
                   )}
+                </div>
+              )}
+
+              {activeTab === "indianGuide" && (
+                <div className="detail-card full-width">
+                  <IndianHealthGuide />
                 </div>
               )}
             </div>

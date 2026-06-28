@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { API_BASE, ALLERGY_OPTIONS, AVATAR_COLORS } from "../config";
+import { API_BASE, ALLERGY_OPTIONS, HEALTH_ISSUE_OPTIONS, AVATAR_COLORS } from "../config";
+import IndianHealthGuide from "./IndianHealthGuide";
 
 export default function AdminPortal({ user, showToast }) {
   const [currentView, setCurrentView] = useState(() => {
@@ -51,6 +52,10 @@ export default function AdminPortal({ user, showToast }) {
     sessionStorage.setItem("adminPortalView", "usermgmt");
     setCurrentView("usermgmt");
   };
+  const goToIndianGuide = () => {
+    sessionStorage.setItem("adminPortalView", "indianGuide");
+    setCurrentView("indianGuide");
+  };
 
   return (
     <div className="admin-portal-layout">
@@ -67,9 +72,11 @@ export default function AdminPortal({ user, showToast }) {
         <button className={`sub-nav-btn ${currentView === "meals" ? "active" : ""}`} onClick={goToMeals}>
           🍽️ Meals
         </button>
-
         <button className={`sub-nav-btn ${currentView === "usermgmt" ? "active" : ""}`} onClick={goToUserMgmt}>
           👥 Users
+        </button>
+        <button className={`sub-nav-btn ${currentView === "indianGuide" ? "active" : ""}`} onClick={goToIndianGuide}>
+          🇮🇳 Indian Health Guide
         </button>
       </nav>
 
@@ -95,6 +102,11 @@ export default function AdminPortal({ user, showToast }) {
 
         {currentView === "usermgmt" && (
           <UserManagementView showToast={showToast} />
+        )}
+        {currentView === "indianGuide" && (
+          <div className="detail-card full-width">
+            <IndianHealthGuide />
+          </div>
         )}
       </div>
     </div>
@@ -361,6 +373,7 @@ function FormView({ onSuccess, showToast }) {
   const [doctorNotes, setDoctorNotes] = useState("");
   const [selectedAllergies, setSelectedAllergies] = useState([]);
   const [allergySeverities, setAllergySeverities] = useState({});
+  const [selectedHealthIssues, setSelectedHealthIssues] = useState([]);
   const [medications, setMedications] = useState([]);
   const [classrooms, setClassrooms] = useState([]);
   const [submitting, setSubmitting] = useState(false);
@@ -394,6 +407,13 @@ function FormView({ onSuccess, showToast }) {
     } else {
       setSelectedAllergies([...selectedAllergies, allergy]);
       setAllergySeverities({ ...allergySeverities, [allergy]: "Moderate" });
+    }
+  };
+  const toggleHealthIssue = (issue) => {
+    if (selectedHealthIssues.includes(issue)) {
+      setSelectedHealthIssues(selectedHealthIssues.filter((i) => i !== issue));
+    } else {
+      setSelectedHealthIssues([...selectedHealthIssues, issue]);
     }
   };
   const updateSeverity = (allergy, severity) =>
@@ -456,6 +476,7 @@ function FormView({ onSuccess, showToast }) {
       doctor_notes: doctorNotes.trim(),
       allergies: selectedAllergies,
       allergy_severities: selectedAllergies.map((a) => allergySeverities[a] || "Moderate"),
+      health_issues: selectedHealthIssues,
       medications: medications.filter((m) => m.name.trim() !== ""),
     };
 
@@ -662,6 +683,27 @@ function FormView({ onSuccess, showToast }) {
           )}
 
           <div className="form-divider"></div>
+          <div className="form-section-label">🏥 Diagnosed Health Issues</div>
+          <p className="text-muted mb-2" style={{ fontSize: "0.85rem" }}>
+            Select all diagnosed child health issues that apply.
+          </p>
+          <div className="allergy-checkbox-grid">
+            {HEALTH_ISSUE_OPTIONS.map((issue) => (
+              <label
+                key={issue}
+                className={`allergy-checkbox-item ${selectedHealthIssues.includes(issue) ? "checked" : ""}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedHealthIssues.includes(issue)}
+                  onChange={() => toggleHealthIssue(issue)}
+                />
+                {issue}
+              </label>
+            ))}
+          </div>
+
+          <div className="form-divider"></div>
           <div className="form-section-label">💊 Current Medications</div>
           {medications.map((med, index) => (
             <div className="medication-entry" key={index}>
@@ -748,6 +790,9 @@ function EditView({ childData, onSuccess, onCancel, showToast }) {
       return acc;
     }, {})
   );
+  const [selectedHealthIssues, setSelectedHealthIssues] = useState(
+    childData?.health_issues || []
+  );
   const [classrooms, setClassrooms] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
@@ -779,6 +824,13 @@ function EditView({ childData, onSuccess, onCancel, showToast }) {
       setAllergySeverities({ ...allergySeverities, [allergy]: "Moderate" });
     }
   };
+  const toggleHealthIssue = (issue) => {
+    if (selectedHealthIssues.includes(issue)) {
+      setSelectedHealthIssues(selectedHealthIssues.filter((i) => i !== issue));
+    } else {
+      setSelectedHealthIssues([...selectedHealthIssues, issue]);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -799,6 +851,7 @@ function EditView({ childData, onSuccess, onCancel, showToast }) {
       parent_relation: parentRelation,
       allergies: selectedAllergies,
       allergy_severities: selectedAllergies.map((a) => allergySeverities[a] || "Moderate"),
+      health_issues: selectedHealthIssues,
     };
 
     try {
@@ -945,6 +998,27 @@ function EditView({ childData, onSuccess, onCancel, showToast }) {
               ))}
             </div>
           )}
+
+          <div className="form-divider"></div>
+          <div className="form-section-label">🏥 Diagnosed Health Issues</div>
+          <p className="text-muted mb-2" style={{ fontSize: "0.85rem" }}>
+            Select all diagnosed child health issues that apply.
+          </p>
+          <div className="allergy-checkbox-grid">
+            {HEALTH_ISSUE_OPTIONS.map((issue) => (
+              <label
+                key={issue}
+                className={`allergy-checkbox-item ${selectedHealthIssues.includes(issue) ? "checked" : ""}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedHealthIssues.includes(issue)}
+                  onChange={() => toggleHealthIssue(issue)}
+                />
+                {issue}
+              </label>
+            ))}
+          </div>
 
           <div className="form-divider"></div>
           <div className="form-section-label">📋 Doctor / Medical Notes</div>
@@ -1239,6 +1313,21 @@ function DetailView({ childId, onBack, onEdit, showToast }) {
               ))
             ) : (
               <div className="no-data-message">✅ No known allergies</div>
+            )}
+          </div>
+
+          <div className="detail-card">
+            <div className="detail-card-title">🏥 Diagnosed Health Issues</div>
+            {child.health_issues && child.health_issues.length > 0 ? (
+              <div className="allergy-badges" style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "10px" }}>
+                {child.health_issues.map((issue, i) => (
+                  <span key={i} className="badge badge-allergy" style={{ background: "rgba(99, 102, 241, 0.1)", color: "var(--color-primary)", border: "1px solid rgba(99, 102, 241, 0.2)" }}>
+                    ⚠️ {issue}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div className="no-data-message">✅ No diagnosed health issues</div>
             )}
           </div>
 

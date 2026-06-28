@@ -118,6 +118,10 @@ async function runMigrations() {
       )
     `);
 
+    try {
+      await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS health_issues TEXT`);
+    } catch (e) { /* column may already exist */ }
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS parents (
         id SERIAL PRIMARY KEY,
@@ -281,6 +285,22 @@ async function runMigrations() {
       `);
     }
 
+    // Also ensure new Indian meals are seeded if not present
+    await pool.query(`
+      INSERT INTO meals (name, ingredients, category, suitable_age_group, is_vegetarian)
+      SELECT name, ingredients, category, suitable_age_group, is_vegetarian
+      FROM (VALUES
+        ('Dal Khichdi (Dairy-Free & Gluten-Free)', 'rice, split yellow lentils, turmeric, cumin, salt, sunflower oil', 'Lunch', '2+ years', TRUE),
+        ('Ragi Porridge / Malt (Dairy-Free)', 'finger millet flour, water, jaggery', 'Breakfast', '1+ years', TRUE),
+        ('Idli with Coconut Chutney', 'rice, urad dal, coconut, green chillies, ginger, salt', 'Breakfast', '1+ years', TRUE),
+        ('Besan Chilla (Gluten-Free)', 'gram flour, onions, tomatoes, coriander, ajwain, salt, oil', 'Breakfast', '2+ years', TRUE),
+        ('Peanut-Free Sabudana Khichdi', 'tapioca pearls, potatoes, cumin seeds, curry leaves, oil, salt', 'Snack', '2+ years', TRUE),
+        ('Paneer Bhurji', 'paneer, cottage cheese, onions, tomatoes, turmeric, coriander, oil', 'Lunch', '2+ years', TRUE),
+        ('Ragi Roti', 'finger millet flour, water, salt, oil', 'Dinner', '2+ years', TRUE)
+      ) AS new_meals(name, ingredients, category, suitable_age_group, is_vegetarian)
+      WHERE NOT EXISTS (SELECT 1 FROM meals WHERE meals.name = new_meals.name);
+    `);
+
     // Seed default demo users if they don't exist (excluding admin which is seeded above)
     const usersCheck = await pool.query("SELECT COUNT(*) as count FROM users WHERE username <> 'admin'");
     if (parseInt(usersCheck.rows[0].count) === 0) {
@@ -308,10 +328,10 @@ async function runMigrations() {
 
       // 1. Aarav Patel (Sunshine Class)
       const aaravRes = await pool.query(`
-        INSERT INTO children (first_name, last_name, age, gender, blood_group, classroom_id, doctor_notes, status, admission_date)
+        INSERT INTO children (first_name, last_name, age, gender, blood_group, classroom_id, doctor_notes, status, admission_date, health_issues)
         VALUES ('Aarav', 'Patel', 3, 'Male', 'A+', $1, 
                 'Aarav has a history of severe peanut allergy confirmed by skin prick test. He also shows mild lactose intolerance. Prescribed EpiPen for emergencies. Avoid all tree nuts and peanut-based products. Monitor for skin rashes after dairy consumption. Last checkup: January 2026.',
-                'Active', CURRENT_DATE) RETURNING id
+                'Active', CURRENT_DATE, 'Lactose Intolerance') RETURNING id
       `, [sunshineId]);
       const aaravId = aaravRes.rows[0].id;
 
@@ -397,6 +417,76 @@ async function runMigrations() {
       console.log('[DB] Seeding of children and medical records completed.');
     }
 
+    // Ensure Ananya Iyer (Legumes Allergy) is seeded
+    const ananyaCheck = await pool.query("SELECT * FROM children WHERE first_name = 'Ananya' AND last_name = 'Iyer'");
+    if (ananyaCheck.rows.length === 0) {
+      console.log('[DB] Seeding Ananya Iyer (Legumes Allergy)...');
+      const classRes = await pool.query('SELECT id, name FROM classrooms');
+      const rainbowId = classRes.rows.find(c => c.name === 'Rainbow Room')?.id;
+      const ananyaRes = await pool.query(`
+        INSERT INTO children (first_name, last_name, age, gender, blood_group, classroom_id, doctor_notes, status, admission_date, health_issues)
+        VALUES ('Ananya', 'Iyer', 4, 'Female', 'B-', $1, 
+                'Ananya has a moderate allergy to legumes (chickpeas, lentils). Exposure triggers hives and digestive discomfort. Avoid dals, sambar, chole, and besan items. Enjoys curd rice and ragi roti. Carrying antihistamine syrup.',
+                'Active', CURRENT_DATE, 'Eczema') RETURNING id
+      `, [rainbowId]);
+      const ananyaId = ananyaRes.rows[0].id;
+      await pool.query(`
+        INSERT INTO parents (child_id, name, relation, phone, email, is_emergency_contact)
+        VALUES ($1, 'Sundar Iyer', 'Father', '+91-9876543220', 'sundar.iyer@email.com', TRUE)
+      `, [ananyaId]);
+      const parentUserCheck = await pool.query("SELECT * FROM users WHERE email = 'sundar.iyer@email.com'");
+      if (parentUserCheck.rows.length === 0) {
+        await pool.query("INSERT INTO users (username, email, password, role) VALUES ('sundar', 'sundar.iyer@email.com', 'password123', 'parent')");
+      }
+      await pool.query(`
+        INSERT INTO allergies (child_id, allergy_type, severity, doctor_confirmed)
+        VALUES ($1, 'Legumes', 'Moderate', TRUE)
+      `, [ananyaId]);
+      await pool.query(`
+        INSERT INTO medications (child_id, medicine_name, dosage, schedule)
+        VALUES ($1, 'Atarax (Hydroxyzine)', '5ml as needed', 'On allergic reaction')
+      `, [ananyaId]);
+      await pool.query(`
+        INSERT INTO attendance (child_id, date, status, check_in_time)
+        VALUES ($1, CURRENT_DATE, 'Present', '08:50:00')
+      `, [ananyaId]);
+    }
+
+    // Ensure Rohan Gupta (Mustard Allergy) is seeded
+    const rohanCheck = await pool.query("SELECT * FROM children WHERE first_name = 'Rohan' AND last_name = 'Gupta'");
+    if (rohanCheck.rows.length === 0) {
+      console.log('[DB] Seeding Rohan Gupta (Mustard Allergy)...');
+      const classRes = await pool.query('SELECT id, name FROM classrooms');
+      const sunshineId = classRes.rows.find(c => c.name === 'Sunshine Class')?.id;
+      const rohanRes = await pool.query(`
+        INSERT INTO children (first_name, last_name, age, gender, blood_group, classroom_id, doctor_notes, status, admission_date, health_issues)
+        VALUES ('Rohan', 'Gupta', 3, 'Male', 'O-', $1, 
+                'Rohan has a severe mustard allergy with a high risk of anaphylaxis. Must avoid mustard seeds, mustard oil, and foods tempered with mustard (tadka). Monitor for severe coughing or swelling. Prescribed EpiPen.',
+                'Active', CURRENT_DATE, 'Asthma') RETURNING id
+      `, [sunshineId]);
+      const rohanId = rohanRes.rows[0].id;
+      await pool.query(`
+        INSERT INTO parents (child_id, name, relation, phone, email, is_emergency_contact)
+        VALUES ($1, 'Amit Gupta', 'Father', '+91-9876543230', 'amit.gupta@email.com', TRUE)
+      `, [rohanId]);
+      const parentUserCheck = await pool.query("SELECT * FROM users WHERE email = 'amit.gupta@email.com'");
+      if (parentUserCheck.rows.length === 0) {
+        await pool.query("INSERT INTO users (username, email, password, role) VALUES ('amit', 'amit.gupta@email.com', 'password123', 'parent')");
+      }
+      await pool.query(`
+        INSERT INTO allergies (child_id, allergy_type, severity, doctor_confirmed)
+        VALUES ($1, 'Mustard', 'Severe', TRUE)
+      `, [rohanId]);
+      await pool.query(`
+        INSERT INTO medications (child_id, medicine_name, dosage, schedule)
+        VALUES ($1, 'EpiPen Jr.', '0.15mg auto-injector', 'Emergency use only')
+      `, [rohanId]);
+      await pool.query(`
+        INSERT INTO attendance (child_id, date, status, check_in_time)
+        VALUES ($1, CURRENT_DATE, 'Present', '08:55:00')
+      `, [rohanId]);
+    }
+
     console.log('[DB] Migrations and seeding check completed.');
   } catch (err) {
     console.error(`[MIGRATION ERROR] Failed to run database migrations: ${err.message}`);
@@ -417,7 +507,9 @@ const MOCK_USERS = [
   { id: 2, username: 'priya', email: 'priya@email.com', password: 'password123', role: 'teacher' },
   { id: 3, username: 'anita', email: 'anita@email.com', password: 'password123', role: 'teacher' },
   { id: 4, username: 'preet', email: 'preet.singh@email.com', password: 'password123', role: 'parent' },
-  { id: 5, username: 'raj', email: 'raj.patel@email.com', password: 'password123', role: 'parent' }
+  { id: 5, username: 'raj', email: 'raj.patel@email.com', password: 'password123', role: 'parent' },
+  { id: 6, username: 'sundar', email: 'sundar.iyer@email.com', password: 'password123', role: 'parent' },
+  { id: 7, username: 'amit', email: 'amit.gupta@email.com', password: 'password123', role: 'parent' }
 ];
 
 const MOCK_CLASSROOMS = [
@@ -442,6 +534,7 @@ const MOCK_CHILDREN = [
       { id: 1, allergy_type: 'Peanuts', severity: 'Severe' },
       { id: 2, allergy_type: 'Dairy', severity: 'Mild' },
     ],
+    health_issues: ['Lactose Intolerance'],
     medications: [
       { id: 1, medicine_name: 'EpiPen (Epinephrine)', dosage: '0.15mg auto-injector', schedule: 'Emergency use only' },
       { id: 2, medicine_name: 'Cetirizine', dosage: '2.5ml once daily', schedule: 'Evening after dinner' },
@@ -463,6 +556,7 @@ const MOCK_CHILDREN = [
     doctor_notes: 'Diya is a healthy child with no major medical concerns. Routine vaccinations are up to date. She had a minor cold last month, fully recovered. No known food allergies. Parents report she is a picky eater but nutritionally adequate.',
     status: 'Active',
     allergies: [],
+    health_issues: [],
     medications: [],
     parents: [
       { id: 3, name: 'Vikram Sharma', relation: 'Father', phone: '+91-9123456789', email: 'vikram.s@email.com', is_emergency_contact: true },
@@ -483,6 +577,7 @@ const MOCK_CHILDREN = [
       { id: 3, allergy_type: 'Dairy', severity: 'Severe' },
       { id: 4, allergy_type: 'Eggs', severity: 'Moderate' },
     ],
+    health_issues: [],
     medications: [
       { id: 3, medicine_name: 'Allegra Drops', dosage: '1ml twice daily', schedule: 'Morning and evening' },
     ],
@@ -491,6 +586,50 @@ const MOCK_CHILDREN = [
       { id: 5, name: 'Simran Singh', relation: 'Mother', phone: '+91-9988776656', email: 'simran.s@email.com', is_emergency_contact: false },
     ],
   },
+  {
+    id: 4,
+    first_name: 'Ananya',
+    last_name: 'Iyer',
+    age: 4,
+    gender: 'Female',
+    blood_group: 'B-',
+    classroom_id: 3,
+    classroom_name: 'Rainbow Room',
+    doctor_notes: 'Ananya has a moderate allergy to legumes (chickpeas, lentils). Exposure triggers hives and digestive discomfort. Avoid dals, sambar, chole, and besan items. Enjoys curd rice and ragi roti. Carrying antihistamine syrup.',
+    status: 'Active',
+    allergies: [
+      { id: 5, allergy_type: 'Legumes', severity: 'Moderate' }
+    ],
+    health_issues: ['Eczema'],
+    medications: [
+      { id: 4, medicine_name: 'Atarax (Hydroxyzine)', dosage: '5ml as needed', schedule: 'On allergic reaction' }
+    ],
+    parents: [
+      { id: 6, name: 'Sundar Iyer', relation: 'Father', phone: '+91-9876543220', email: 'sundar.iyer@email.com', is_emergency_contact: true }
+    ]
+  },
+  {
+    id: 5,
+    first_name: 'Rohan',
+    last_name: 'Gupta',
+    age: 3,
+    gender: 'Male',
+    blood_group: 'O-',
+    classroom_id: 2,
+    classroom_name: 'Sunshine Class',
+    doctor_notes: 'Rohan has a severe mustard allergy with a high risk of anaphylaxis. Must avoid mustard seeds, mustard oil, and foods tempered with mustard (tadka). Monitor for severe coughing or swelling. Prescribed EpiPen.',
+    status: 'Active',
+    allergies: [
+      { id: 6, allergy_type: 'Mustard', severity: 'Severe' }
+    ],
+    health_issues: ['Asthma'],
+    medications: [
+      { id: 5, medicine_name: 'EpiPen Jr.', dosage: '0.15mg auto-injector', schedule: 'Emergency use only' }
+    ],
+    parents: [
+      { id: 7, name: 'Amit Gupta', relation: 'Father', phone: '+91-9876543230', email: 'amit.gupta@email.com', is_emergency_contact: true }
+    ]
+  }
 ];
 
 const MOCK_MEALS = [
@@ -501,12 +640,21 @@ const MOCK_MEALS = [
   { id: 5, name: 'Chocolate Milk Shake', ingredients: 'milk, chocolate syrup, sugar, ice cream', category: 'Snack' },
   { id: 6, name: 'Egg Fried Rice', ingredients: 'rice, eggs, soy sauce, vegetables, sesame oil', category: 'Lunch' },
   { id: 7, name: 'Mixed Fruit Salad', ingredients: 'apple, banana, grapes, orange, pomegranate', category: 'Snack' },
+  { id: 8, name: 'Dal Khichdi (Dairy-Free & Gluten-Free)', ingredients: 'rice, split yellow lentils, turmeric, cumin, salt, sunflower oil', category: 'Lunch' },
+  { id: 9, name: 'Ragi Porridge / Malt (Dairy-Free)', ingredients: 'finger millet flour, water, jaggery', category: 'Breakfast' },
+  { id: 10, name: 'Idli with Coconut Chutney', ingredients: 'rice, urad dal, coconut, green chillies, ginger, salt', category: 'Breakfast' },
+  { id: 11, name: 'Besan Chilla (Gluten-Free)', ingredients: 'gram flour, onions, tomatoes, coriander, ajwain, salt, oil', category: 'Breakfast' },
+  { id: 12, name: 'Peanut-Free Sabudana Khichdi', ingredients: 'tapioca pearls, potatoes, cumin seeds, curry leaves, oil, salt', category: 'Snack' },
+  { id: 13, name: 'Paneer Bhurji', ingredients: 'paneer, cottage cheese, onions, tomatoes, turmeric, coriander, oil', category: 'Lunch' },
+  { id: 14, name: 'Ragi Roti', ingredients: 'finger millet flour, water, salt, oil', category: 'Dinner' }
 ];
 
 const MOCK_ATTENDANCE = [
   { id: 1, child_id: 1, date: '2026-06-18', status: 'Present', check_in_time: '08:45', check_out_time: null, notes: '' },
   { id: 2, child_id: 2, date: '2026-06-18', status: 'Present', check_in_time: '09:00', check_out_time: null, notes: '' },
   { id: 3, child_id: 3, date: '2026-06-18', status: 'Absent', check_in_time: null, check_out_time: null, notes: 'Parent called - mild fever' },
+  { id: 4, child_id: 4, date: '2026-06-18', status: 'Present', check_in_time: '08:50', check_out_time: null, notes: '' },
+  { id: 5, child_id: 5, date: '2026-06-18', status: 'Present', check_in_time: '08:55', check_out_time: null, notes: '' }
 ];
 
 const MOCK_MILESTONES = [
@@ -545,6 +693,8 @@ const ALLERGY_INGREDIENT_MAP = {
   'tree nuts': ['almond', 'cashew', 'walnut', 'pistachio', 'hazelnut', 'pecan'],
   fish: ['fish', 'salmon', 'tuna', 'cod', 'sardine'],
   sesame: ['sesame', 'tahini'],
+  mustard: ['mustard', 'sarson', 'mustard oil', 'mustard seeds'],
+  legumes: ['lentil', 'lentils', 'dal', 'chana', 'chickpea', 'chickpeas', 'besan', 'gram flour', 'peas', 'pigeon pea', 'kidney beans', 'rajma'],
 };
 
 function checkMealSafety(childAllergies, mealIngredients) {
@@ -868,7 +1018,7 @@ app.get('/api/parent/children', async (req, res) => {
       }
 
       const childrenRes = await pool.query(
-        `SELECT c.id, c.first_name, c.last_name, c.age, c.gender, c.blood_group, c.classroom_id, cl.name as classroom_name
+        `SELECT c.id, c.first_name, c.last_name, c.age, c.gender, c.blood_group, c.classroom_id, c.health_issues, cl.name as classroom_name
          FROM children c
          LEFT JOIN classrooms cl ON c.classroom_id = cl.id
          WHERE c.id = ANY($1)
@@ -885,6 +1035,7 @@ app.get('/api/parent/children', async (req, res) => {
           ...child,
           allergies: allergiesRes.rows.map(a => a.allergy_type),
           medications: medicationsRes.rows,
+          health_issues: child.health_issues ? child.health_issues.split(',') : [],
           risk_status: isHighRisk(allergiesRes.rows) ? 'High Risk' : 'Normal'
         });
       }
@@ -904,6 +1055,7 @@ app.get('/api/parent/children', async (req, res) => {
             classroom_id: child.classroom_id,
             classroom_name: child.classroom_name,
             allergies: child.allergies.map(a => a.allergy_type),
+            health_issues: child.health_issues || [],
             medications: child.medications,
             risk_status: isHighRisk(child.allergies) ? 'High Risk' : 'Normal'
           });
@@ -951,8 +1103,8 @@ app.post('/api/children', async (req, res) => {
         }
 
         const childRes = await client.query(
-          `INSERT INTO children (first_name, last_name, age, gender, blood_group, classroom_id, doctor_notes, admission_date, status)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Active') RETURNING id`,
+          `INSERT INTO children (first_name, last_name, age, gender, blood_group, classroom_id, doctor_notes, admission_date, status, health_issues)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Active', $9) RETURNING id`,
           [
             data.first_name,
             data.last_name || '',
@@ -961,7 +1113,8 @@ app.post('/api/children', async (req, res) => {
             data.blood_group || '',
             parseInt(data.classroom_id),
             data.doctor_notes || '',
-            new Date().toISOString().split('T')[0]
+            new Date().toISOString().split('T')[0],
+            (data.health_issues || []).join(',')
           ]
         );
         childId = childRes.rows[0].id;
@@ -1042,6 +1195,7 @@ app.post('/api/children', async (req, res) => {
         doctor_notes: data.doctor_notes || '',
         status: 'Active',
         allergies: allergies,
+        health_issues: data.health_issues || [],
         medications: medications,
         parents: [{
           id: childId * 10,
@@ -1079,7 +1233,7 @@ app.get('/api/children', async (req, res) => {
     if (!usingMockData) {
       let query = `
         SELECT DISTINCT c.id, c.first_name, c.last_name, c.age, c.gender,
-                        c.blood_group, c.classroom_id, c.status,
+                        c.blood_group, c.classroom_id, c.status, c.health_issues,
                         cl.name as classroom_name
         FROM children c
         LEFT JOIN classrooms cl ON c.classroom_id = cl.id
@@ -1164,6 +1318,7 @@ app.get('/api/children', async (req, res) => {
           classroom_name: child.classroom_name || 'Unassigned',
           status: child.status,
           allergies: allergies.map(a => a.allergy_type),
+          health_issues: child.health_issues ? child.health_issues.split(',') : [],
           risk_status: isHighRisk(allergies) ? 'High Risk' : 'Normal'
         });
       }
@@ -1205,6 +1360,7 @@ app.get('/api/children', async (req, res) => {
           classroom_name: child.classroom_name || 'Unassigned',
           status: child.status,
           allergies: child.allergies.map(a => a.allergy_type),
+          health_issues: child.health_issues || [],
           risk_status: isHighRisk(child.allergies) ? 'High Risk' : 'Normal'
         });
       }
@@ -1259,6 +1415,7 @@ app.get('/api/children/:child_id', async (req, res) => {
         classroom_name: child.classroom_name || 'Unassigned',
         doctor_notes: child.doctor_notes || '',
         status: child.status,
+        health_issues: child.health_issues ? child.health_issues.split(',') : [],
         risk_status: isHighRisk(allergiesRes.rows) ? 'High Risk' : 'Normal',
         parents: parentsRes.rows.map(p => ({
           id: p.id,
@@ -1289,6 +1446,7 @@ app.get('/api/children/:child_id', async (req, res) => {
 
       childData = {
         ...child,
+        health_issues: child.health_issues || [],
         risk_status: isHighRisk(child.allergies) ? 'High Risk' : 'Normal'
       };
       meals = MOCK_MEALS;
@@ -1407,8 +1565,8 @@ async function updateChildProfile(req, res) {
         await client.query('BEGIN');
 
         await client.query(
-          `UPDATE children SET first_name=$1, last_name=$2, age=$3, gender=$4, blood_group=$5, classroom_id=$6, doctor_notes=$7
-           WHERE id=$8`,
+          `UPDATE children SET first_name=$1, last_name=$2, age=$3, gender=$4, blood_group=$5, classroom_id=$6, doctor_notes=$7, health_issues=$8
+           WHERE id=$9`,
           [
             data.first_name,
             data.last_name || '',
@@ -1417,6 +1575,7 @@ async function updateChildProfile(req, res) {
             data.blood_group || '',
             parseInt(data.classroom_id),
             data.doctor_notes || '',
+            (data.health_issues || []).join(','),
             childId
           ]
         );
@@ -1481,6 +1640,7 @@ async function updateChildProfile(req, res) {
       child.blood_group = data.blood_group !== undefined ? data.blood_group : child.blood_group;
       child.classroom_id = data.classroom_id !== undefined ? parseInt(data.classroom_id) : child.classroom_id;
       child.doctor_notes = data.doctor_notes !== undefined ? data.doctor_notes : child.doctor_notes;
+      child.health_issues = data.health_issues !== undefined ? data.health_issues : child.health_issues;
 
       let classObj = MOCK_CLASSROOMS.find(c => c.id === child.classroom_id);
       child.classroom_name = classObj ? classObj.name : 'Unknown';

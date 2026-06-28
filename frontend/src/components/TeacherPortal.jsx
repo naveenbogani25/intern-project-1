@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { API_BASE, ALLERGY_OPTIONS, AVATAR_COLORS } from "../config";
+import IndianHealthGuide from "./IndianHealthGuide";
 
 export default function TeacherPortal({ user, showToast }) {
   const [currentView, setCurrentView] = useState(() => {
@@ -30,6 +31,10 @@ export default function TeacherPortal({ user, showToast }) {
     sessionStorage.setItem("teacherPortalView", "meals");
     setCurrentView("meals");
   };
+  const goToIndianGuide = () => {
+    sessionStorage.setItem("teacherPortalView", "indianGuide");
+    setCurrentView("indianGuide");
+  };
 
   return (
     <div className="teacher-portal-layout">
@@ -49,6 +54,9 @@ export default function TeacherPortal({ user, showToast }) {
         <button className={`sub-nav-btn ${currentView === "meals" ? "active" : ""}`} onClick={goToMeals}>
           🍽️ Meals & Safety
         </button>
+        <button className={`sub-nav-btn ${currentView === "indianGuide" ? "active" : ""}`} onClick={goToIndianGuide}>
+          🇮🇳 Indian Health Guide
+        </button>
       </nav>
 
       <div className="portal-content-area" style={{ marginTop: "16px" }}>
@@ -60,6 +68,11 @@ export default function TeacherPortal({ user, showToast }) {
         )}
         {currentView === "attendance" && <TeacherAttendanceView user={user} showToast={showToast} />}
         {currentView === "meals" && <TeacherMealsView showToast={showToast} />}
+        {currentView === "indianGuide" && (
+          <div className="detail-card full-width">
+            <IndianHealthGuide />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -498,6 +511,21 @@ function TeacherDetailView({ childId, onBack, showToast }) {
               ))
             ) : (
               <div className="no-data-message">✅ No known allergies</div>
+            )}
+          </div>
+
+          <div className="detail-card">
+            <div className="detail-card-title">🏥 Diagnosed Health Issues</div>
+            {child.health_issues && child.health_issues.length > 0 ? (
+              <div className="allergy-badges" style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "10px" }}>
+                {child.health_issues.map((issue, i) => (
+                  <span key={i} className="badge badge-allergy" style={{ background: "rgba(99, 102, 241, 0.1)", color: "var(--color-primary)", border: "1px solid rgba(99, 102, 241, 0.2)" }}>
+                    ⚠️ {issue}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div className="no-data-message">✅ No diagnosed health issues</div>
             )}
           </div>
 
